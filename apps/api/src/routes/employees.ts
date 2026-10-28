@@ -49,6 +49,8 @@ empRouter.post("/:id/key", async (req: any, res) => {
 });
 empRouter.delete("/:id", async (req: any, res) => {
   const eid = req.params.id;
+  await db.delete(s.coachingSessions).where(and(eq(s.coachingSessions.employeeId, eid), eq(s.coachingSessions.orgId, req.user.orgId)));
+  await db.delete(s.memos).where(and(eq(s.memos.employeeId, eid), eq(s.memos.orgId, req.user.orgId)));
   const callIds = (await db.select().from(s.calls).where(and(eq(s.calls.employeeId, eid), eq(s.calls.orgId, req.user.orgId)))).map((c) => c.id);
   for (const cid of callIds) await db.delete(s.criterionResults).where(eq(s.criterionResults.callId, cid));
   await db.delete(s.calls).where(and(eq(s.calls.employeeId, eid), eq(s.calls.orgId, req.user.orgId)));

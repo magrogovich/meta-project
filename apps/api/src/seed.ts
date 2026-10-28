@@ -59,6 +59,9 @@ if (!users.length) {
 } else { orgId = users[0].orgId; console.log(`using login ${email} / ${pass}`); }
 
 const existing = await db.select().from(s.employees).where(eq(s.employees.orgId, orgId));
+// FK order: coaching sessions -> memos -> criterion results -> calls -> employees
+await db.delete(s.coachingSessions).where(eq(s.coachingSessions.orgId, orgId));
+await db.delete(s.memos).where(eq(s.memos.orgId, orgId));
 for (const e of existing) {
   const cs = await db.select().from(s.calls).where(eq(s.calls.employeeId, e.id));
   for (const c of cs) await db.delete(s.criterionResults).where(eq(s.criterionResults.callId, c.id));

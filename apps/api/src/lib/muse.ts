@@ -1,43 +1,121 @@
-// Single provider abstraction for all Meta Muse model calls.
-// Swap by config: set MUSE_API_URL + MUSE_API_KEY to use a real endpoint,
-// otherwise deterministic mock runs (labeled in UI/README).
+// Single provider module for ALL Meta Muse model calls (per spec: swap by config).
+//
+//   LLM (reasoning/scoring/reports/coaching): Muse Spark 1.3 Contributor
+//     -> POST {MUSE_BASE_URL}/v1/chat/completions   (https://dev.meta.ai/docs/models#muse-spark)
+//   STT (call transcription): Muse Voice Transcribe 1.0
+//     -> POST {MUSE_BASE_URL}/v1/asr/transcribe     (https://dev.meta.ai/docs/speech-to-text)
+//     multipart: `request` JSON {mode, model, audioEncoding, languageBias, keywords} + `audio` WAV.
+//     Per-channel ENDPOINTING gives turn-level timestamps; mixed mono falls back to DIARIZATION.
+//   TTS: NO Muse speech-synthesis model exists (Voice Transcribe is STT-only), so coach
+//     voice output stays on browser speechSynthesis. Nothing to configure here.
+//
+// Auth: one MODEL_API_KEY for everything. No key (or MUSE_MOCK=true) => deterministic
+// mock paths, always labeled via the returned `mock: true` flags.
+import { splitChannels, turnsToLines, type Turn } from "./audio.js";
+
 export type Criterion = { id: string; name: string; description: string; weight: number; guidance: string };
 export type TLine = { speaker: string; text: string; start: number; end: number };
 
-const URL = process.env.MUSE_API_URL || "";
-const KEY = process.env.MUSE_API_KEY || "";
-const MODEL = process.env.MUSE_MODEL || "muse-4";
-export const isMock = !URL || !KEY || (process.env.MUSE_MOCK || "true") === "true";
+const BASE = (process.env.MUSE_BASE_URL || "https://api.meta.ai").replace(/\/$/, "");
+const KEY = process.env.MODEL_API_KEY || process.env.MUSE_API_KEY || "";
+export const LLM_MODEL = process.env.MUSE_LLM_MODEL || "muse-spark-1.3-contributor";
+export const STT_MODEL = process.env.MUSE_STT_MODEL || "muse-voice-transcribe-1.0";
+export const isMock = !KEY || (process.env.MUSE_MOCK || "false") === "true";
 
-async function realComplete(system: string, user: string, json: boolean): Promise<string> {
-  const res = await fetch(URL, {
+// ---------- LLM: Muse Spark 1.3 (Chat Completions) ----------
+async function llm(system: string, user: string, json: boolean): Promise<string> {
+  const res = await fetch(`${BASE}/v1/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
-    body: JSON.stringify({ model: MODEL, system, messages: [{ role: "user", content: user }], temperature: 0.1, response_format: json ? { type: "json_object" } : undefined }),
+    body: JSON.stringify({
+      model: LLM_MODEL, temperature: 0.1,
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      ...(json ? { response_format: { type: "json_object" } } : {}),
+    }),
   });
-  if (!res.ok) throw new Error(`Muse HTTP ${res.status}: ${await res.text().then((t) => t.slice(0, 300))}`);
+  if (!res.ok) throw new Error(`Muse LLM HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data: any = await res.json();
-  return data?.choices?.[0]?.message?.content ?? data?.output_text ?? JSON.stringify(data).slice(0, 4000);
+  const text = data?.choices?.[0]?.message?.content;
+  if (!text) throw new Error("Muse LLM: empty response");
+  return text;
 }
 
 export async function completeText(system: string, user: string): Promise<{ text: string; mock: boolean }> {
   if (isMock) return { text: mockText(system, user), mock: true };
   try {
-    const text = await realComplete(system, user, false);
-    return { text, mock: false };
+    return { text: await llm(system, user, false), mock: false };
   } catch {
     return { text: mockText(system, user), mock: true };
   }
 }
 
 function mockText(system: string, user: string): string {
-  if (system.includes("coach")) {
+  if (system.includes("AI voice coach")) {
     return "Thanks for sharing that. Let's dig into one specific moment from your calls, then do a quick role-play so you leave with 2-3 concrete actions. What felt hardest about that call from your side?";
   }
-  return "Mock Muse response (no API key configured). " + user.slice(0, 200);
+  return "Mock Muse response (no MODEL_API_KEY configured). " + user.slice(0, 200);
 }
 
-// --- Scorecard extraction (mock: keyword scan -> default criteria) ---
+// ---------- STT: Muse Voice Transcribe 1.0 (file endpoint) ----------
+const LANG_NAMES: Record<string, string> = { en: "English", fr: "French", de: "German", es: "Spanish" };
+
+type SttResponse = { transcript: string; audioDurationMs?: number; turns?: Turn[] };
+
+async function sttRequest(wav: Buffer, opts: { mode: "ENDPOINTING" | "DIARIZATION"; language?: string }): Promise<SttResponse> {
+  const request = {
+    mode: opts.mode, model: STT_MODEL, audioEncoding: "WAV",
+    languageBias: [LANG_NAMES[opts.language || "en"] || "English"],
+    keywords: ["Arocall"],
+  };
+  const fd = new FormData();
+  fd.append("request", new Blob([JSON.stringify(request)], { type: "application/json" }));
+  fd.append("audio", new Blob([wav as any], { type: "audio/wav" }), "call.wav");
+  const res = await fetch(`${BASE}/v1/asr/transcribe?sessionId=arocall-${Date.now()}`, {
+    method: "POST", headers: { Authorization: `Bearer ${KEY}` }, body: fd,
+  });
+  if (!res.ok) throw new Error(`Muse STT HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return (await res.json()) as SttResponse;
+}
+
+// Transcribe a call recording. Stereo (Agent=L, Customer=R) is split and each channel is
+// transcribed with ENDPOINTING, so speaker labels come from channel identity. Mixed mono
+// falls back to DIARIZATION (A -> Agent = whoever speaks first, B -> Customer). Throws on
+// failure so the pipeline can use its mock transcript path.
+export async function transcribeCallAudio(wav: Buffer, language = "en"): Promise<{ lines: TLine[]; mock: boolean }> {
+  if (isMock) throw new Error("mock mode: no MODEL_API_KEY");
+  const channels = splitChannels(wav);
+  if (channels.length === 2) {
+    const [agent, customer] = await Promise.all([
+      sttRequest(channels[0], { mode: "ENDPOINTING", language }),
+      sttRequest(channels[1], { mode: "ENDPOINTING", language }),
+    ]);
+    const lines = [
+      ...turnsToLines(agent.turns || [], "Agent"),
+      ...turnsToLines(customer.turns || [], "Customer"),
+    ].sort((a, b) => a.start - b.start);
+    if (!lines.length) throw new Error("Muse STT: no turns returned");
+    return { lines, mock: false };
+  }
+  const mixed = await sttRequest(wav, { mode: "DIARIZATION", language });
+  const bySpeaker: Record<string, TLine[]> = {};
+  for (const t of mixed.turns || []) {
+    const line = turnsToLines([t], t.speaker === "B" ? "__B__" : "__A__")[0];
+    if (line) (bySpeaker[line.speaker] = bySpeaker[line.speaker] || []).push(line);
+  }
+  // Channel identity unknown for mixed mono: first speaker (= agent greeting) -> Agent.
+  const labels = Object.keys(bySpeaker);
+  const firstStart = (ls: TLine[]) => Math.min(...ls.map((l) => l.start));
+  labels.sort((a, b) => firstStart(bySpeaker[a]) - firstStart(bySpeaker[b]));
+  const map: Record<string, string> = {};
+  labels.forEach((l, i) => (map[l] = i === 0 ? "Agent" : "Customer"));
+  const lines = Object.entries(bySpeaker)
+    .flatMap(([l, ls]) => ls.map((x) => ({ ...x, speaker: map[l] })))
+    .sort((a, b) => a.start - b.start);
+  if (!lines.length) throw new Error("Muse STT: no turns returned");
+  return { lines, mock: false };
+}
+
+// --- Scorecard extraction ---
 export const DEFAULT_CRITERIA: Criterion[] = [
   { id: "greeting", name: "Greeting & Intro", description: "Greets customer, states name/company, offers help.", weight: 15, guidance: "Pass if agent greets within first 30s with name + company." },
   { id: "empathy", name: "Empathy & Listening", description: "Acknowledges feelings, no interrupting.", weight: 20, guidance: "Pass if at least one empathetic acknowledgement." },
@@ -49,7 +127,7 @@ export const DEFAULT_CRITERIA: Criterion[] = [
 export async function scorecardFromPolicy(policyText: string): Promise<{ criteria: Criterion[]; mock: boolean }> {
   if (!isMock) {
     try {
-      const raw = await realComplete(
+      const raw = await llm(
         "You convert QA policies to scorecard JSON. Reply ONLY JSON: {\"criteria\":[{\"id\",\"name\",\"description\",\"weight\",\"guidance\"}]} weights sum to 100.",
         policyText.slice(0, 8000), true);
       const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
@@ -64,7 +142,6 @@ export async function scorecardFromPolicy(policyText: string): Promise<{ criteri
       }
     } catch { /* fall through to mock */ }
   }
-  // Deterministic mock: pick criteria whose keywords appear, else defaults
   const t = policyText.toLowerCase();
   const picks = DEFAULT_CRITERIA.filter((c) => t.includes(c.id.slice(0, 4)) || t.length < 50);
   return { criteria: picks.length ? picks : DEFAULT_CRITERIA, mock: true };
@@ -79,7 +156,6 @@ export function deterministicScore(transcript: TLine[], criteria: Criterion[], l
     return agentLines[Math.min(fallbackIdx, agentLines.length - 1)] || transcript[0];
   };
   const has = (...needles: string[]) => needles.some((n) => allText.includes(n));
-  const rules: Record<string, { needles: string[]; score: number; result: "pass" | "partial" | "fail" }[]> = {};
   const results = criteria.map((c, i) => {
     const id = c.id.toLowerCase();
     let needles: string[] = [c.name.toLowerCase().split(" ")[0]];
@@ -109,11 +185,10 @@ export function deterministicScore(transcript: TLine[], criteria: Criterion[], l
 export async function scoreCall(transcript: TLine[], criteria: Criterion[], language = "en") {
   if (!isMock) {
     try {
-      const raw = await realComplete(
+      const raw = await llm(
         "You are a call-center QA scorer. Reply ONLY JSON {\"language\",\"summary\",\"wentWell\":[],\"wentWrong\":[],\"tags\":[],\"results\":[{\"criterionId\",\"result\":\"pass|partial|fail\",\"score\":0-100,\"evidenceQuote\":\"verbatim line\",\"evidenceStart\":number}]}. Every evidenceQuote MUST be a verbatim transcript line.",
         JSON.stringify({ criteria, transcript }).slice(0, 12000), true);
       const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
-      // validate quotes verbatim, drop/repair failures
       const full = transcript.map((t) => t.text);
       const norm = (s: string) => s.trim().toLowerCase();
       for (const r of parsed.results || []) {

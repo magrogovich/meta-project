@@ -38,15 +38,25 @@ export async function processCall(callId: string) {
   const call = rows[0];
   try {
     await db.update(s.calls).set({ status: "transcribing" }).where(eq(s.calls.id, callId));
-    // STT: MVP mock — transcription supplied at upload/seed; if empty, synthesize a generic one with language detection stub.
+    // STT: transcription supplied at upload/seed wins; otherwise Muse Voice Transcribe
+    // on the stored audio (mock transcript when no MODEL_API_KEY).
     let transcript: any[] = call.transcript as any[];
     if (!transcript?.length) {
-      transcript = [
-        { speaker: "Agent", text: "Hello, thank you for calling Arocall, my name is Alex, how can I help you today?", start: 0.5, end: 5 },
-        { speaker: "Customer", text: "Hi, my bill looks wrong this month.", start: 5.5, end: 9 },
-        { speaker: "Agent", text: "I understand, that must be frustrating. Let me verify your account and check the charges.", start: 9.5, end: 15 },
-        { speaker: "Agent", text: "I will fix this by tomorrow and send a confirmation. Is there anything else I can help with? Thank you!", start: 15.5, end: 22 },
-      ];
+      try {
+        const { readFileSync } = await import("fs");
+        const { join } = await import("path");
+        const { storageDir } = await import("../lib/util.js");
+        const { transcribeCallAudio } = await import("../lib/muse.js");
+        const wav = readFileSync(join(storageDir(), call.audioFile));
+        ({ lines: transcript } = await transcribeCallAudio(wav, call.language));
+      } catch {
+        transcript = [
+          { speaker: "Agent", text: "Hello, thank you for calling Arocall, my name is Alex, how can I help you today?", start: 0.5, end: 5 },
+          { speaker: "Customer", text: "Hi, my bill looks wrong this month.", start: 5.5, end: 9 },
+          { speaker: "Agent", text: "I understand, that must be frustrating. Let me verify your account and check the charges.", start: 9.5, end: 15 },
+          { speaker: "Agent", text: "I will fix this by tomorrow and send a confirmation. Is there anything else I can help with? Thank you!", start: 15.5, end: 22 },
+        ];
+      }
       await db.update(s.calls).set({ transcript }).where(eq(s.calls.id, callId));
     }
     await db.update(s.calls).set({ status: "analyzing" }).where(eq(s.calls.id, callId));

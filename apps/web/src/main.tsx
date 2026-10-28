@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Route, Switch, Redirect } from "wouter";
 import { useState } from "react";
+import { AuthProvider, useAuth } from "./lib/auth";
+import { AppLayout } from "./components/layout";
 import { Login, Walkthrough } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { EmployeeProfile, CallDetail } from "./pages/Employee";
@@ -10,18 +12,34 @@ import { Scorecard, Coach } from "./pages/Misc";
 
 const qc = new QueryClient();
 function Shell() {
+  return <AuthProvider><App /></AuthProvider>;
+}
+function App() {
+  const { token } = useAuth();
+  const authed = !!token;
   const [help, setHelp] = useState(!localStorage.getItem("walk"));
-  const authed = !!localStorage.getItem("token");
+  const helpFn = () => setHelp(true);
   return (
     <>
       <Walkthrough open={help && authed} onClose={() => { localStorage.setItem("walk", "1"); setHelp(false); }} />
       <Switch>
         <Route path="/login"><Login /></Route>
-        <Route path="/">{authed ? <Dashboard onHelp={() => setHelp(true)} /> : <Redirect to="/login" />}</Route>
-        <Route path="/employees/:id">{authed ? <EmployeeProfile /> : <Redirect to="/login" />}</Route>
-        <Route path="/calls/:id">{authed ? <CallDetail /> : <Redirect to="/login" />}</Route>
-        <Route path="/scorecard">{authed ? <Scorecard /> : <Redirect to="/login" />}</Route>
         <Route path="/coach/:id"><Coach /></Route>
+        <Route>
+          {authed ? (
+            <AppLayout onHelp={helpFn}>
+              <Switch>
+                <Route path="/"><Dashboard /></Route>
+                <Route path="/employees/:id"><EmployeeProfile /></Route>
+                <Route path="/calls/:id"><CallDetail /></Route>
+                <Route path="/scorecard"><Scorecard /></Route>
+                <Route><Redirect to="/" /></Route>
+              </Switch>
+            </AppLayout>
+          ) : (
+            <Redirect to="/login" />
+          )}
+        </Route>
       </Switch>
     </>
   );

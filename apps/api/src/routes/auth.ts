@@ -32,18 +32,43 @@ authRouter.post("/login", async (req, res) => {
   if (!rows.length || !(await bcrypt.compare(password, rows[0].passwordHash || ""))) return res.status(401).json({ error: "bad credentials" });
   res.json({ token: sign(rows[0]), user: { id: rows[0].id, email: rows[0].email, role: rows[0].role, orgId: rows[0].orgId } });
 });
-// "Continue with Google" — real OAuth needs GOOGLE_CLIENT_ID; MVP mock accepts email+name and labels it.
+// Runtime config for the SPA (avoids VITE_ rebuilds): exposes only public values.
+authRouter.get("/config", (_req, res) => {
+  res.json({ googleClientId: process.env.GOOGLE_CLIENT_ID || null });
+});
+// "Continue with Google" — two modes:
+//  - Real (GOOGLE_CLIENT_ID set): frontend sends the GIS ID-token `credential`;
+//    verified against Google here. GOOGLE_CLIENT_SECRET is reserved for a future
+//    server-side authorization-code flow (not needed for this button flow).
+//  - Mock (no client ID): accepts email+name for local dev, labeled `mock: true`.
 authRouter.post("/google", async (req, res) => {
-  const { email, name } = req.body || {};
-  if (!email) return res.status(400).json({ error: "email required" });
-  let rows = await db.select().from(s.users).where(eq(s.users.email, email));
+  const { credential, email, name } = req.body || {};
+  const clientId = process.env.GOOGLE_CLIENT_ID || "";
+  let verifiedEmail = "", verifiedName = "";
+  if (clientId) {
+    if (!credential) return res.status(400).json({ error: "Google credential required" });
+    try {
+      const { OAuth2Client } = await import("google-auth-library");
+      const ticket = await new OAuth2Client(clientId).verifyIdToken({ idToken: credential, audience: clientId });
+      const p = ticket.getPayload();
+      if (!p?.email) return res.status(401).json({ error: "Google token has no email" });
+      verifiedEmail = p.email; verifiedName = p.name || "";
+    } catch {
+      return res.status(401).json({ error: "Invalid Google credential" });
+    }
+  } else {
+    if (!email) return res.status(400).json({ error: "email required" });
+    verifiedEmail = email; verifiedName = name || "";
+  }
+  const email_l = verifiedEmail.toLowerCase();
+  let rows = await db.select().from(s.users).where(eq(s.users.email, email_l));
   if (!rows.length) {
-    const [org] = await db.insert(s.orgs).values({ name: `${email.split("@")[0]}'s org` }).returning();
-    const [u] = await db.insert(s.users).values({ orgId: org.id, email, name: name || email.split("@")[0], role: "admin" }).returning();
+    const [org] = await db.insert(s.orgs).values({ name: `${email_l.split("@")[0]}'s org` }).returning();
+    const [u] = await db.insert(s.users).values({ orgId: org.id, email: email_l, name: verifiedName || email_l.split("@")[0], role: "admin" }).returning();
     await db.insert(s.scorecards).values({ orgId: org.id, version: 1, criteria: (await import("../lib/muse.js")).DEFAULT_CRITERIA, sourceText: "Default QA scorecard" });
     rows = [u];
   }
-  res.json({ token: sign(rows[0]), mock: !process.env.GOOGLE_CLIENT_ID, user: { id: rows[0].id, email: rows[0].email, role: rows[0].role, orgId: rows[0].orgId } });
+  res.json({ token: sign(rows[0]), mock: !clientId, user: { id: rows[0].id, email: rows[0].email, role: rows[0].role, orgId: rows[0].orgId } });
 });
 authRouter.post("/invite", authMw, async (req: any, res) => {
   const { email } = req.body || {};

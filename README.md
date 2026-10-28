@@ -17,4 +17,9 @@ No manual schema push needed: the API runs `ensureSchema()` (`apps/api/src/db/mi
 If you change `apps/api/src/db/schema.ts`, apply the diff with drizzle-kit: `pnpm --filter @arocall/api db:push` (uses `drizzle.config.ts` + `DATABASE_URL`).
 
 ## Env
-See `.env.example`. `MUSE_API_URL` + `MUSE_API_KEY` unset = deterministic mock everywhere (labeled "MOCK"/"mock Muse" in UI). Google login without `GOOGLE_CLIENT_ID` = mock email passthrough (labeled). Audio stored locally in `STORAGE_DIR` (object-storage interface: swap `saveAudio` for S3). No TODO stubs in core flows.
+See `.env.example`. All Muse calls live in `apps/api/src/lib/muse.ts` (swap models by config):
+- `MODEL_API_KEY` — one Meta Model API key for everything. Unset (or `MUSE_MOCK=true`) = deterministic mock paths, labeled "MOCK"/"mock Muse" in the UI.
+- `MUSE_LLM_MODEL` (default `muse-spark-1.3-contributor`) — reasoning: scorecard extraction, call scoring/reports, coaching replies. Chat Completions API, temp 0.1, JSON mode; evidence quotes verified verbatim and totals computed in code.
+- `MUSE_STT_MODEL` (default `muse-voice-transcribe-1.0`) — transcription via `POST /v1/asr/transcribe`. Stereo recordings are split (Agent=L, Customer=R) and each channel transcribed with ENDPOINTING for turn timestamps; mixed mono uses DIARIZATION. `languageBias` is set from the call language (en/fr/de/es); domain keyword bias: "Arocall".
+- TTS: Muse offers no speech-synthesis model, so the coach speaks via browser `speechSynthesis`; captions/STT in the session use the Web Speech API (the realtime `wss://.../asr/realtime` endpoint is available when a native live-caption client is built).
+Google login without `GOOGLE_CLIENT_ID` = mock email passthrough (labeled). Audio stored locally in `STORAGE_DIR` (object-storage interface: swap `saveAudio` for S3). No TODO stubs in core flows.

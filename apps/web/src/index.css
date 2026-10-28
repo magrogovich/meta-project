@@ -1,8 +1,80 @@
 @import "tailwindcss";
-body { background: #f6f9fb; }
-.card { background: white; border: 1px solid #e5eef3; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,60,80,.05); }
-.btn { background: #0e7490; color: white; border-radius: 10px; padding: 8px 14px; font-weight: 600; }
-.btn:hover { background: #0c657d; }
-.btn-ghost { border: 1px solid #cfe0e8; border-radius: 10px; padding: 8px 14px; }
-.input { border: 1px solid #cfe0e8; border-radius: 10px; padding: 8px 12px; width: 100%; background: white; }
-.badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  --font-sans: var(--app-font-sans);
+  --radius-lg: var(--radius);
+}
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --border: 220 13% 91%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --primary: 222 47% 11%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 46%;
+  --accent: 220 14% 96%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --chart-1: 245 58% 51%;
+  --chart-2: 142 71% 45%;
+  --chart-3: 38 92% 50%;
+  --chart-4: 0 84% 60%;
+  --chart-5: 199 89% 48%;
+  --app-font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { min-height: 100%; background-color: #f9fafb; }
+  body { @apply font-sans antialiased bg-background text-foreground; min-height: 100dvh; }
+  #root { min-height: 100dvh; }
+  * { scrollbar-width: thin; scrollbar-color: rgb(203 213 225) transparent; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background-color: rgb(203 213 225); border-radius: 9999px; border: 3px solid transparent; background-clip: content-box; }
+  button:not(:disabled), a[href], select:not(:disabled) { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  input:not(:disabled), textarea:not(:disabled) { cursor: text; }
+}
+
+@layer utilities {
+  .font-sans-dashboard { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; }
+}
+
+/* Arocall component shortcuts in the example-dashboard style */
+.card { @apply bg-white border border-gray-200 rounded-lg; }
+.btn { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-800 disabled:opacity-60; }
+.btn-outline { @apply inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60; }
+.btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100; }
+.input { @apply w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100; }
+.badge { @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold; }
+.table-head { @apply text-left text-[11px] font-semibold uppercase tracking-wider text-gray-400; }

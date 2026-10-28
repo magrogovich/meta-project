@@ -12,5 +12,9 @@ AI QA for 100% of call-center calls. Stack: pnpm workspaces · Express 5 + esbui
 Demo flow: signup/login → walkthrough (Help) → Scorecard paste policy → Employees add (copy session key ONCE) → employee profile shows seeded calls → call detail (audio + transcript click-to-seek + evidence quotes) → Generate memo → Print/PDF → Start AI coaching → open link → voice/text coach (Web Speech + speechSynthesis; mock-labeled without MUSE keys).
 Agent: `cd agent && npm run setup` (paste key) then `npm start`; drop a .wav into `agent/inbox/` to simulate a recorded call — it chunk-uploads and appears analyzed.
 
+## Database / migrations
+No manual schema push needed: the API runs `ensureSchema()` (`apps/api/src/db/migrate.ts`) on boot and the seed script runs it too, creating all tables with `CREATE TABLE IF NOT EXISTS`. Just create the empty database and start the API.
+If you change `apps/api/src/db/schema.ts`, apply the diff with drizzle-kit: `pnpm --filter @arocall/api db:push` (uses `drizzle.config.ts` + `DATABASE_URL`).
+
 ## Env
 See `.env.example`. `MUSE_API_URL` + `MUSE_API_KEY` unset = deterministic mock everywhere (labeled "MOCK"/"mock Muse" in UI). Google login without `GOOGLE_CLIENT_ID` = mock email passthrough (labeled). Audio stored locally in `STORAGE_DIR` (object-storage interface: swap `saveAudio` for S3). No TODO stubs in core flows.

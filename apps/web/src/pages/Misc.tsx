@@ -42,7 +42,7 @@ export function Scorecard() {
 export function Coach() {
   const id = location.pathname.split("/")[2];
   const token = new URLSearchParams(location.search).get("token") || "";
-  const [msgs, setMsgs] = useState<{ role: string; text: string }[]>([{ role: "coach", text: "Hi! I am Arrow, your AI coach. This session is recorded and summarized. How did your recent calls feel?" }]);
+  const [msgs, setMsgs] = useState<{ role: string; text: string }[]>([{ role: "coach", text: "Hi! I am Aro, your AI coach. This session is recorded and summarized. How did your recent calls feel?" }]);
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
   const [human, setHuman] = useState(false);
@@ -70,7 +70,7 @@ export function Coach() {
       <h1 className="text-xl font-bold">AI Coaching Session {mock && <span className="badge bg-amber-100">(mock Muse — no API key)</span>}</h1>
       <p className="text-xs text-slate-500">English only for now (config COACH_LANG for future). AI coach, recorded & summarized.</p>
       <div className="card p-4 mt-3 space-y-2 min-h-64">
-        <div className="flex items-center gap-2"><div className="w-10 h-10 rounded-full bg-cyan-600 animate-pulse grid place-items-center text-white font-bold">A</div><span className="text-sm">Arrow is {listening ? "listening…" : "here"}</span></div>
+        <div className="flex items-center gap-2"><div className="w-10 h-10 rounded-full bg-cyan-600 animate-pulse grid place-items-center text-white font-bold">A</div><span className="text-sm">Aro is {listening ? "listening…" : "here"}</span></div>
         {msgs.map((m, i) => <div key={i} className={`text-sm p-2 rounded ${m.role === "coach" ? "bg-cyan-50" : "bg-slate-100 text-right"}`}><b>{m.role}:</b> {m.text}</div>)}
       </div>
       <div className="flex gap-2 mt-3">

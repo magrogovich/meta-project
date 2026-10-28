@@ -1,7 +1,7 @@
 import readline from "readline";
 import { writeFileSync } from "fs";
 const API = process.env.API_URL || "http://localhost:4000";
-console.log("=== Arrowfield agent setup ===");
+console.log("=== Arocall agent setup ===");
 console.log("CONSENT NOTICE (one-time): this app records calls for QA while a call is active. A recording indicator is shown. Ask your admin for the 'call recording notice' text.");
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 rl.question("Paste session key: ", async (key) => {

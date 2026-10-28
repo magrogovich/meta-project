@@ -5,7 +5,7 @@ import { DEFAULT_CRITERIA } from "./lib/muse.js";
 
 test("weighted score computed in code, quotes verbatim", () => {
   const tr = [
-    { speaker: "Agent", text: "Hello, thank you for calling Arrowfield, my name is Ana.", start: 0, end: 3 },
+    { speaker: "Agent", text: "Hello, thank you for calling Arocall, my name is Ana.", start: 0, end: 3 },
     { speaker: "Customer", text: "My bill is wrong.", start: 3, end: 5 },
     { speaker: "Agent", text: "I understand, I am sorry. I will fix this by tomorrow.", start: 5, end: 9 },
     { speaker: "Agent", text: "Is there anything else? Thank you, goodbye!", start: 9, end: 12 },

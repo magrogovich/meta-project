@@ -1,4 +1,4 @@
-You are a senior full-stack engineer. Build an MVP of "Arrowfield Calls", a SaaS platform that evaluates call center agents by scoring 100% of their calls with AI instead of manual random sampling. Follow the tech stack below strictly and do not substitute technologies unless something is impossible. If it is, explain why and propose the closest alternative.
+You are a senior full-stack engineer. Build an MVP of "Arocall", a SaaS platform that evaluates call center agents by scoring 100% of their calls with AI instead of manual random sampling. Follow the tech stack below strictly and do not substitute technologies unless something is impossible. If it is, explain why and propose the closest alternative.
 
 === TECH STACK ===
 [PASTE YOUR TECHNOLOGIES FILE HERE]
@@ -6,7 +6,7 @@ For all reasoning, scoring, reporting and coaching, use Meta's Muse models. Put 
 === END TECH STACK ===
 
 ## 1. Product summary
-Call centers currently QA by picking 1-2 random calls per employee per month. Arrowfield Calls records every call through a lightweight background desktop app on the employee's computer, transcribes it with speaker labels, scores it against the company's QA policy with evidence, and shows everything in a web dashboard. After an evaluation period, the admin can send the employee to a live voice coaching session with an AI agent instead of a human evaluator.
+Call centers currently QA by picking 1-2 random calls per employee per month. Arocall records every call through a lightweight background desktop app on the employee's computer, transcribes it with speaker labels, scores it against the company's QA policy with evidence, and shows everything in a web dashboard. After an evaluation period, the admin can send the employee to a live voice coaching session with an AI agent instead of a human evaluator.
 
 Supported call languages: English, French, German, Spanish. The AI coaching session is English only for now. The dashboard UI is English only.
 

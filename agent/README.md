@@ -1,4 +1,4 @@
-# Arrowfield desktop agent (MVP, cross-platform Node)
+# Arocall desktop agent (MVP, cross-platform Node)
 Windows-first per spec; this MVP is a tiny background Node app (no main window) that works on Windows/macOS/Linux.
 
 - First run: `npm run setup` (or `node src/setup.js`) asks for the session key, validates against the server, saves to `config.json` (key stored as-is for MVP; production: OS credential store e.g. Credential Manager / Keychain via keytar).

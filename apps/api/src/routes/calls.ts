@@ -42,7 +42,7 @@ export async function processCall(callId: string) {
     let transcript: any[] = call.transcript as any[];
     if (!transcript?.length) {
       transcript = [
-        { speaker: "Agent", text: "Hello, thank you for calling Arrowfield, my name is Alex, how can I help you today?", start: 0.5, end: 5 },
+        { speaker: "Agent", text: "Hello, thank you for calling Arocall, my name is Alex, how can I help you today?", start: 0.5, end: 5 },
         { speaker: "Customer", text: "Hi, my bill looks wrong this month.", start: 5.5, end: 9 },
         { speaker: "Agent", text: "I understand, that must be frustrating. Let me verify your account and check the charges.", start: 9.5, end: 15 },
         { speaker: "Agent", text: "I will fix this by tomorrow and send a confirmation. Is there anything else I can help with? Thank you!", start: 15.5, end: 22 },

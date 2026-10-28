@@ -5,7 +5,7 @@ import { useLocation } from "wouter";
 export function Login() {
   const [, nav] = useLocation();
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("demo@arrowfield.ai");
+  const [email, setEmail] = useState("demo@arocall.ai");
   const [password, setPassword] = useState("demo1234");
   const [err, setErr] = useState("");
   const go = async (fn: () => Promise<any>) => {
@@ -16,7 +16,7 @@ export function Login() {
   return (
     <div className="min-h-screen grid place-items-center p-6">
       <div className="card p-8 w-full max-w-md">
-        <h1 className="text-2xl font-bold text-cyan-800">Arrowfield Calls</h1>
+        <h1 className="text-2xl font-bold text-cyan-800">Arocall</h1>
         <p className="text-sm text-slate-500 mt-1">AI QA for 100% of calls. AI assists, humans decide — no automated disciplinary actions.</p>
         <div className="flex gap-2 mt-4">
           <button className={mode === "login" ? "btn" : "btn-ghost"} onClick={() => setMode("login")}>Login</button>

@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# builds
+dist/
+build/
+*.tsbuildinfo
+.vite/
+apps/web/dist/
+
+# env & secrets (use .env.example as template)
+.env
+.env.local
+.env.*.local
+apps/api/.env
+apps/web/.env
+
+# local runtime data
+storage/
+apps/api/storage/
+agent/inbox/*.wav
+agent/src/config.json
+agent/config.json
+
+# logs & OS
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# editor / tooling
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.opencode/
+
+# drizzle migrations output
+apps/api/drizzle/

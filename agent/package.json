@@ -1,0 +1,1 @@
+{"name":"@arrowfield/agent","version":"0.1.0","type":"module","bin":{"arrowfield-agent":"./src/index.js"},"scripts":{"start":"node src/index.js","setup":"node src/setup.js"},"dependencies":{}}

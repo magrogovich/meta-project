@@ -1,0 +1,1 @@
+{"name":"arrowfield-calls","private":true,"version":"0.1.0","type":"module","scripts":{"dev:api":"pnpm --filter @arrowfield/api dev","dev:web":"pnpm --filter @arrowfield/web dev","build":"pnpm -r build","seed":"pnpm --filter @arrowfield/api seed"},"packageManager":"pnpm@9.0.0"}

@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS action_items (id uuid primary key default gen_random_
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS agent_status text not null default 'never';
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_seen timestamp;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS agent_version text not null default '';
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS agent_queue integer not null default 0;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS client_call_id text;
+CREATE UNIQUE INDEX IF NOT EXISTS calls_client_call_id ON calls (client_call_id);
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS session_key_enc text not null default '';
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS session_key_hmac text not null default '';
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS session_key_revoked boolean not null default false;

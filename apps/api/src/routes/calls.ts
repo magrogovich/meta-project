@@ -205,8 +205,62 @@ agentRouter.post("/validate", async (req, res) => {
   if (emp.sessionKeyRevoked) return res.status(403).json({ error: "key_revoked", message: "This session key was revoked by an admin. Ask for a new key." });
   res.json({ ok: true, employee: { id: emp.id, name: emp.name, orgId: emp.orgId } });
 });
-agentRouter.post("/upload-chunk", upload.single("chunk"), async (req, res) => {
+// Heartbeat: agent status every 60s -> dashboard online/offline + last seen.
+agentRouter.post("/heartbeat", async (req, res) => {
   const key = (req.headers["x-session-key"] as string) || req.body?.sessionKey;
+  const emp = await findEmployeeByKey(key || "");
+  if (!emp) return res.status(401).json({ error: "bad key" });
+  if (emp.sessionKeyRevoked) return res.status(403).json({ error: "key_revoked" });
+  const { status, version, queueSize } = req.body || {};
+  await db.update(s.employees).set({
+    lastSeen: new Date(),
+    agentStatus: status === "paused" ? "offline" : "online",
+    agentVersion: version || emp.agentVersion || "",
+    agentQueue: Math.max(0, Number(queueSize) || 0),
+  }).where(eq(s.employees.id, emp.id));
+  res.json({ ok: true });
+});
+
+// Two-track call upload (Opus or WAV per track) + metadata, idempotent on call_id.
+// Merges to stereo WAV (Agent=L, Customer=R) and creates the Call as "uploaded"
+// so the existing pipeline picks it up.
+const tracksUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 32 * 1024 * 1024 } });
+agentRouter.post("/calls", tracksUpload.fields([{ name: "agent_track", maxCount: 1 }, { name: "customer_track", maxCount: 1 }]), async (req, res) => {
+  const key = (req.headers["x-session-key"] as string) || req.body?.sessionKey;
+  const emp = await findEmployeeByKey(key || "");
+  if (!emp) return res.status(401).json({ error: "bad key" });
+  if (emp.sessionKeyRevoked) return res.status(403).json({ error: "key_revoked", message: "This session key was revoked by an admin. Ask for a new key." });
+  let meta: any = {};
+  try { meta = JSON.parse(req.body?.metadata || "{}"); } catch { return res.status(400).json({ error: "bad metadata JSON" }); }
+  if (!meta.call_id) return res.status(400).json({ error: "metadata.call_id required" });
+  const files = (req as any).files || {};
+  const agentTrack = files.agent_track?.[0]?.buffer, customerTrack = files.customer_track?.[0]?.buffer;
+  if (!agentTrack || !customerTrack) return res.status(400).json({ error: "agent_track + customer_track required" });
+  const dup = await db.select().from(s.calls).where(eq(s.calls.clientCallId, String(meta.call_id)));
+  if (dup.length) return res.json({ done: true, duplicate: true, callId: dup[0].id });
+  let stereo: Buffer;
+  try {
+    const { tracksToStereo } = await import("../lib/audio.js");
+    stereo = tracksToStereo(agentTrack, customerTrack);
+  } catch (e: any) {
+    // No ffmpeg and non-WAV input: store the agent track raw; the pipeline
+    // falls back to its mock transcript path (labeled in the UI).
+    stereo = agentTrack;
+  }
+  const file = saveAudio(stereo, `call_${Date.now()}.wav`);
+  const dur = Math.max(1, Math.round(Number(meta.duration_sec) || 0));
+  const [c] = await db.insert(s.calls).values({
+    orgId: emp.orgId, employeeId: emp.id, language: meta.language || "en", audioFile: file,
+    status: "uploaded", transcript: [], durationSec: dur,
+    startedAt: meta.start_time ? new Date(meta.start_time * 1000) : new Date(),
+    clientCallId: String(meta.call_id),
+  }).returning();
+  await db.update(s.employees).set({ lastSeen: new Date(), agentStatus: "online", agentVersion: meta.agent_version || emp.agentVersion || "" }).where(eq(s.employees.id, emp.id));
+  processCall(c.id);
+  res.json({ done: true, duplicate: false, callId: c.id });
+});
+
+agentRouter.post("/upload-chunk", upload.single("chunk"), async (req, res) => {  const key = (req.headers["x-session-key"] as string) || req.body?.sessionKey;
   const { uploadId, index, total, employeeId, language, startedAt, transcript } = req.body || {};
   const emp = await findEmployeeByKey(key || "");
   if (!emp) return res.status(401).json({ error: "bad key" });

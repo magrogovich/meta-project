@@ -29,7 +29,7 @@ export function Coach() {
     rec.start();
   };
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-3">
+    <div className="w-full max-w-4xl space-y-3">
       <div className="flex items-center gap-2">
         <h1 className="text-lg font-bold tracking-tight text-gray-900">AI coaching session</h1>
         {mock && <Pill tone="amber">mock Aro — no API key</Pill>}

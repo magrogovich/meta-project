@@ -12,7 +12,7 @@ export function Coaching() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Queue");
   const [coachFor, setCoachFor] = useState<{ id: string; name: string } | null>(null);
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4">
+    <div className="w-full space-y-4">
       <div>
         <h1 className="text-lg font-bold tracking-tight text-gray-900">Coaching</h1>
         <p className="text-xs text-gray-500">Who needs help, and what happened after.</p>

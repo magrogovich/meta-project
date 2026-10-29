@@ -14,7 +14,7 @@ export function Settings() {
   const [tab, setTab] = useState("Organization");
   const tabs = ["Organization", "Team", "Departments", "Coaching rules", "Retention", "Audit log"];
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-4">
+    <div className="w-full space-y-4">
       <h1 className="text-lg font-bold tracking-tight text-gray-900">Settings</h1>
       <div className="flex flex-wrap gap-1">
         {tabs.map((t) => (

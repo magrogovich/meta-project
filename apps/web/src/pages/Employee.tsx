@@ -227,7 +227,7 @@ export function EmployeeProfile() {
   if (!data) return <p className="p-4 text-xs">Not found</p>;
   const e = data.employee;
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4">
+    <div className="w-full space-y-4">
       <Link href="/employees" className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900"><ArrowLeft className="h-3.5 w-3.5" /> Employees</Link>
 
       <Card className="p-4">
@@ -361,7 +361,7 @@ export function CallDetail() {
   if (isLoading) return <p className="p-4 text-xs text-gray-500">Loading…</p>;
   const seek = (s: number) => { if (audioRef.current) { audioRef.current.currentTime = s; audioRef.current.play(); } };
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4">
+    <div className="w-full space-y-4">
       <Link href={c ? `/employees/${c.employeeId}` : "/employees"} className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900"><ArrowLeft className="h-3.5 w-3.5" /> Back to employee</Link>
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2">

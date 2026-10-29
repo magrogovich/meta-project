@@ -46,6 +46,8 @@ function Wizard({ onDone }: { onDone: () => void }) {
   const [newDept, setNewDept] = useState("");
   const [created, setCreated] = useState<{ id: string; name: string; sessionKey: string } | null>(null);
   const { data: depts } = useQuery({ queryKey: ["depts"], queryFn: () => api("/api/departments") });
+  const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => api("/api/settings") });
+  const allowedLangs: string[] = settings?.org?.settings?.languages?.length ? settings.org.settings.languages : LANGS;
   const deptNames = [...new Set([...((depts as any[]) || []).map((d) => d.name), form.department])];
 
   const toggleLang = (l: string) =>
@@ -78,8 +80,8 @@ function Wizard({ onDone }: { onDone: () => void }) {
     : "#";
 
   return (
-    <div className="fixed inset-0 z-[100] flex justify-end bg-black/40">
-      <div className="flex h-full w-full max-w-md flex-col bg-white shadow-xl">
+    <div className="slide-over-backdrop fixed inset-0 z-[100] flex justify-end bg-black/40">
+      <div className="slide-over flex h-full w-full max-w-md flex-col bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
           <div>
             <h2 className="text-sm font-bold text-gray-900">Add employee {step === 1 ? "(1/2 details)" : "(2/2 connect agent)"}</h2>
@@ -184,7 +186,7 @@ export function Employees() {
   const refresh = () => { qc.invalidateQueries({ queryKey: ["emp-table"] }); qc.invalidateQueries({ queryKey: ["emps"] }); };
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4">
+    <div className="w-full space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-bold tracking-tight text-gray-900">Employees</h1>

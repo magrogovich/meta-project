@@ -36,7 +36,7 @@ export function Dashboard() {
   const hist = (data?.charts?.buckets || []).map((v: number, i: number) => ({ label: histLabels[i], value: v }));
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4">
+    <div className="w-full space-y-4">
       <div>
         <h1 className="text-lg font-bold tracking-tight text-gray-900">What needs my attention?</h1>
         <p className="text-xs text-gray-500">Filters apply to everything below.</p>

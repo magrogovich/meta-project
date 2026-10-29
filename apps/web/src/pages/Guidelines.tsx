@@ -146,7 +146,7 @@ export function Guidelines() {
   const docs: any[] = data?.docs || [];
   if (draft) {
     return (
-      <div className="mx-auto w-full max-w-6xl space-y-4">
+      <div className="w-full space-y-4">
         <button className="text-xs font-medium text-gray-500 hover:text-gray-900" onClick={() => setDraft(null)}>← Back to guidelines</button>
         <h1 className="text-lg font-bold tracking-tight text-gray-900">Review before saving</h1>
         <EditorPane title={draft.title} setTitle={(t) => setDraft({ ...draft, title: t })} markdown={draft.markdown}
@@ -156,7 +156,7 @@ export function Guidelines() {
     );
   }
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4">
+    <div className="w-full space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-bold tracking-tight text-gray-900">Guidelines</h1>
@@ -304,7 +304,7 @@ export function GuidelineDoc() {
   const versions: any[] = doc.versions || [];
   const diffPair = diffV != null ? versions.filter((v) => v.version === diffV || v.version === diffV - 1) : [];
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4">
+    <div className="w-full space-y-4">
       <Link href="/guidelines" className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900"><ArrowLeft className="h-3.5 w-3.5" /> Guidelines</Link>
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-bold tracking-tight text-gray-900">{doc.title}</h1>

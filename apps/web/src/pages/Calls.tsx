@@ -26,7 +26,7 @@ export function Calls() {
   const arrow = (key: string) => (f.sort === key ? (f.order === "desc" ? " ↓" : " ↑") : "");
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4">
+    <div className="w-full space-y-4">
       <div>
         <h1 className="text-lg font-bold tracking-tight text-gray-900">Calls</h1>
         <p className="text-xs text-gray-500">{total} matching · click a row for transcript + evidence</p>

@@ -92,7 +92,13 @@ export function Login() {
 
 export function Walkthrough({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
-  const steps = ["Add the company guidelines (Guidelines page): upload Markdown, write your own, or use the starter template — then Activate", "Add the first employee (Employees page)", "Copy the session key from the wizard (keys are persistent and revealable)", "Install the desktop agent (agent/README) and paste the key", "See the first call appear on the employee profile"];
+  const steps = [
+    "Add the company guidelines (Guidelines page): upload a Markdown file, write your own, or use the starter template — then Activate it and approve the generated evaluation criteria",
+    "Add the first employee (Employees page): the wizard collects details, then shows the persistent session key for the desktop agent",
+    "Install the desktop agent (agent/README) and paste the key (reveal it again anytime from the employee's Agent tab)",
+    "Make a test call — it appears analyzed on the Dashboard and the employee profile",
+    "When scores slip, open Coaching: work the queue, generate a memo, or start an AI session",
+  ];
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4">
       <div className="card w-full max-w-lg p-6">

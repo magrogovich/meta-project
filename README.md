@@ -15,6 +15,9 @@ Agent: `cd agent && npm run setup` (paste key) then `npm start`; drop a .wav int
 No manual schema push needed: the API runs `ensureSchema()` (`apps/api/src/db/migrate.ts`) on boot and the seed script runs it too, creating all tables with `CREATE TABLE IF NOT EXISTS`. Just create the empty database and start the API.
 If you change `apps/api/src/db/schema.ts`, apply the diff with drizzle-kit: `pnpm --filter @arocall/api db:push` (uses `drizzle.config.ts` + `DATABASE_URL`).
 
+## Settings
+Settings page (admin-gated writes): organization name, team invites (evaluator role; accept via the invite link), departments (rename cascades to employees) + offered languages, coaching rules (shared by the queue and dashboard card), retention window with a manual cleanup run, and the audit log (key reveals/copies, call views, cleanup runs).
+
 ## Env
 See `.env.example`. All Muse calls live in `apps/api/src/lib/muse.ts` (swap models by config):
 - `MODEL_API_KEY` — one Meta Model API key for everything. Unset (or `MUSE_MOCK=true`) = deterministic mock paths, labeled "MOCK"/"mock Muse" in the UI.

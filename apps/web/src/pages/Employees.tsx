@@ -104,7 +104,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
                 <input className="input mt-2" placeholder="…or create new department" value={newDept} onChange={(e) => setNewDept(e.target.value)} /></div>
               <div><label className="text-[11px] font-semibold text-gray-500">Languages worked</label>
                 <div className="mt-1 flex flex-wrap gap-2">
-                  {LANGS.map((l) => (
+                  {allowedLangs.map((l: string) => (
                     <button key={l} type="button" onClick={() => toggleLang(l)}
                       className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${form.languages.includes(l) ? "bg-gray-900 text-white ring-gray-900" : "bg-white text-gray-600 ring-gray-200 hover:ring-gray-400"}`}>
                       {LANG_NAME[l]}

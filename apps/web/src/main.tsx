@@ -8,11 +8,12 @@ import { AppLayout } from "./components/layout";
 import { Login, Walkthrough } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { EmployeeProfile, CallDetail } from "./pages/Employee";
-import { ComingSoon, Analytics } from "./pages/Stub";
+import { Analytics } from "./pages/Stub";
 import { Employees } from "./pages/Employees";
 import { Calls } from "./pages/Calls";
 import { Coaching } from "./pages/Coaching";
 import { Guidelines, GuidelineDoc } from "./pages/Guidelines";
+import { Settings, AcceptInvite } from "./pages/Settings";
 import { Coach } from "./pages/Misc";
 
 const qc = new QueryClient();
@@ -29,6 +30,7 @@ function App() {
       <Walkthrough open={help && authed} onClose={() => { localStorage.setItem("walk", "1"); setHelp(false); }} />
       <Switch>
         <Route path="/login"><Login /></Route>
+        <Route path="/accept-invite"><AcceptInvite /></Route>
         <Route path="/coach/:id"><Coach /></Route>
         <Route>
           {authed ? (
@@ -43,7 +45,7 @@ function App() {
                 <Route path="/guidelines"><Guidelines /></Route>
                 <Route path="/guidelines/:id"><GuidelineDoc /></Route>
                 <Route path="/analytics"><Analytics /></Route>
-                <Route path="/settings"><ComingSoon title="Settings" hint="Organization, team, departments, coaching rules and audit log land in Phase 7." /></Route>
+                <Route path="/settings"><Settings /></Route>
                 <Route><Redirect to="/" /></Route>
               </Switch>
             </AppLayout>

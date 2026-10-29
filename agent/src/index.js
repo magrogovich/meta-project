@@ -9,6 +9,7 @@ const API = process.env.API_URL || cfg.apiUrl || "http://localhost:4000";
 const inbox = new URL("../inbox/", import.meta.url);
 if (!existsSync(inbox)) mkdirSync(inbox, { recursive: true });
 console.log(`agent running for ${cfg.employee?.name} -> ${API} | status: connected | ● indicator shown during upload`);
+const AGENT_VERSION = "0.2.0";
 async function uploadFile(path, name) {
   const buf = readFileSync(path);
   const CH = 256 * 1024, total = Math.max(1, Math.ceil(buf.length / CH)), uploadId = randomUUID();
@@ -19,7 +20,16 @@ async function uploadFile(path, name) {
     fd.append("chunk", new Blob([chunk]), "chunk.wav");
     fd.append("uploadId", uploadId); fd.append("index", String(i)); fd.append("total", String(total));
     fd.append("sessionKey", cfg.sessionKey); fd.append("language", "en");
-    const r = await fetch(`${API}/api/agent/upload-chunk`, { method: "POST", headers: { "X-Session-Key": cfg.sessionKey }, body: fd });
+    const r = await fetch(`${API}/api/agent/upload-chunk`, { method: "POST", headers: { "X-Session-Key": cfg.sessionKey, "X-Agent-Version": AGENT_VERSION }, body: fd });
+    if (r.status === 403) {
+      const j = await r.json().catch(() => ({}));
+      if (j.error === "key_revoked") {
+        console.error("✖ ERROR: session key REVOKED by admin. Uploads paused — local files kept. Ask your admin for a new key, then run setup again. Status: error.");
+        const err = new Error("key_revoked_stop"); err.keepFile = true; throw err;
+      }
+      throw new Error("upload forbidden: " + (j.message || j.error || r.status));
+    }
+    if (r.status === 401) throw new Error("upload unauthorized (bad key). Ask your admin to check the key. Status: error.");
     if (!r.ok) throw new Error("upload failed " + r.status);
     const j = await r.json();
     if (j.done) console.log(`uploaded -> call ${j.callId}`);
@@ -29,7 +39,13 @@ async function uploadFile(path, name) {
 setInterval(async () => {
   try {
     const files = readdirSync(inbox).filter((f) => f.endsWith(".wav"));
-    for (const f of files) { try { await uploadFile(new URL(`../inbox/${f}`, import.meta.url), f); } catch (e) { console.error("retry later:", e.message); } }
+    for (const f of files) {
+      try { await uploadFile(new URL(`../inbox/${f}`, import.meta.url), f); }
+      catch (e) {
+        if (e.keepFile) return; // revoked: keep files, stop this round
+        console.error("retry later:", e.message);
+      }
+    }
   } catch {}
 }, 5000);
 // crash watchdog: exit code nonzero -> supervisor restarts (pm2 / Task Scheduler / launchd)

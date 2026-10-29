@@ -1,21 +1,33 @@
 import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, ClipboardCheck, Bell, Menu, LogOut, CircleHelp } from "lucide-react";
+import { LayoutDashboard, PhoneCall, Users, Mic, BookOpen, ChartBar, Settings as SettingsIcon, Bell, Menu, LogOut, CircleHelp } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
 const NAV = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: ClipboardCheck, label: "Scorecard", path: "/scorecard" },
+  { icon: PhoneCall, label: "Calls", path: "/calls" },
+  { icon: Users, label: "Employees", path: "/employees" },
+  { icon: Mic, label: "Coaching", path: "/coaching" },
+  { icon: BookOpen, label: "Guidelines", path: "/guidelines" },
+  { icon: ChartBar, label: "Analytics", path: "/analytics" },
+] as const;
+const NAV_BOTTOM = [
+  { icon: SettingsIcon, label: "Settings", path: "/settings" },
 ] as const;
 
 function pageNameFor(path: string): string {
   const p = path.split("?")[0];
   if (p === "/") return "Dashboard";
-  if (p.startsWith("/employees")) return "Employee profile";
-  if (p.startsWith("/calls")) return "Call detail";
-  if (p.startsWith("/scorecard")) return "Scorecard";
+  if (p.startsWith("/calls") && p !== "/calls") return "Call detail";
+  if (p.startsWith("/calls")) return "Calls";
+  if (p.startsWith("/employees") && p !== "/employees") return "Employee profile";
+  if (p.startsWith("/employees")) return "Employees";
+  if (p.startsWith("/coaching")) return "Coaching";
+  if (p.startsWith("/guidelines")) return "Guidelines";
+  if (p.startsWith("/analytics")) return "Analytics";
+  if (p.startsWith("/settings")) return "Settings";
   if (p.startsWith("/coach")) return "AI coaching";
   return "Workspace";
 }
@@ -55,6 +67,25 @@ function Sidebar({ onNav }: { onNav: () => void }) {
         })}
       </div>
       <div className="space-y-2 p-3">
+        {NAV_BOTTOM.map((item) => {
+          const isActive = routePath.startsWith(item.path);
+          return (
+            <Link key={item.path} href={item.path} onClick={onNav}
+              className={`group flex w-full cursor-pointer items-center rounded-lg px-2.5 py-2 transition-all duration-150 ${isActive ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"}`}>
+              <div className="flex items-center gap-3">
+                <item.icon className={`h-4 w-4 ${isActive ? "text-white" : "text-gray-400 group-hover:text-gray-600"}`} />
+                <span className="text-xs font-medium">{item.label}</span>
+              </div>
+            </Link>
+          );
+        })}
+        <button type="button" onClick={() => { onHelp(); onNav(); }}
+          className="group flex w-full cursor-pointer items-center rounded-lg px-2.5 py-2 text-gray-500 transition-all duration-150 hover:bg-gray-50 hover:text-gray-900">
+          <div className="flex items-center gap-3">
+            <CircleHelp className="h-4 w-4 text-gray-400 group-hover:text-gray-600" />
+            <span className="text-xs font-medium">Help</span>
+          </div>
+        </button>
         <div className="group flex items-center gap-2.5 rounded-lg p-2">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-xs font-semibold text-gray-700">A</div>
           <div className="min-w-0 flex-1">

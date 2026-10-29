@@ -7,7 +7,8 @@ import { pool } from "./db/client.js";
 import { ensureSchema } from "./db/migrate.js";
 import * as schema from "./db/schema.js";
 import { authRouter } from "./routes/auth.js";
-import { empRouter } from "./routes/employees.js";
+import { empRouter, deptRouter } from "./routes/employees.js";
+import { coachRouter2 } from "./routes/coaching.js";
 import { miscRouter } from "./routes/calls.js";
 
 const log = pino({ level: "info" });
@@ -22,6 +23,8 @@ await ensureSchema();
 app.get("/api/health", (_req, res) => res.json({ ok: true, mock: (process.env.MUSE_MOCK || "true") }));
 app.use("/api/auth", authRouter);
 app.use("/api/employees", empRouter);
+app.use("/api/departments", deptRouter);
+app.use("/api/coaching", coachRouter2);
 app.use("/api", miscRouter);
 
 const PORT = Number(process.env.PORT || 4000);

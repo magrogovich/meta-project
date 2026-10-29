@@ -1,131 +1,143 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useState } from "react";
 import { Link } from "wouter";
-import { Users, PhoneCall, Gauge, TriangleAlert, Plus } from "lucide-react";
+import { TriangleAlert, ArrowDownWideNarrow, PhoneOff, CircleX, UserX, Siren } from "lucide-react";
 import { Card, CardHeader, StatCard, Pill, scoreTone, EmptyState } from "../components/ui";
 import { LineChart, BarChart } from "../components/charts";
 
-export function Dashboard() {
-  const qc = useQueryClient();
-  const { data: emps, isLoading } = useQuery({ queryKey: ["emps"], queryFn: () => api("/api/employees") });
-  const { data: calls } = useQuery({ queryKey: ["calls"], queryFn: () => api("/api/calls") });
-  const [form, setForm] = useState({ name: "", department: "Support", languages: "en" });
-  const [showAdd, setShowAdd] = useState(false);
-  const [lastKey, setLastKey] = useState("");
-  const create = useMutation({
-    mutationFn: () => api("/api/employees", { method: "POST", body: JSON.stringify({ ...form, languages: form.languages.split(",").map((s) => s.trim()) }) }),
-    onSuccess: (r) => { setLastKey(r.sessionKey); setShowAdd(false); setForm({ name: "", department: "Support", languages: "en" }); qc.invalidateQueries({ queryKey: ["emps"] }); },
-  });
+const KIND_META: Record<string, { icon: any; tone: "red" | "amber" | "gray" }> = {
+  drop: { icon: ArrowDownWideNarrow, tone: "amber" },
+  critical: { icon: Siren, tone: "red" },
+  flag: { icon: UserX, tone: "amber" },
+  failed: { icon: CircleX, tone: "red" },
+  offline: { icon: PhoneOff, tone: "gray" },
+};
 
-  const list: any[] = emps || [];
-  const callList: any[] = calls || [];
-  const done = callList.filter((c) => c.status === "done");
-  const avg = done.length ? Math.round(done.reduce((a, c) => a + c.score, 0) / done.length * 10) / 10 : 0;
-  const needCoach = list.filter((e) => (e.overallScore || 0) < 70).length;
-  const trendPts = callList.slice().sort((a, b) => +new Date(a.startedAt) - +new Date(b.startedAt)).slice(-20).map((c) => ({ t: c.startedAt, score: c.score }));
-  const byEmp = list.slice(0, 8).map((e) => ({ label: e.name.split(" ")[0], value: Math.round(e.overallScore || 0) }));
-  const recent = callList.slice(0, 10);
-  const empName = (id: string) => list.find((e) => e.id === id)?.name || "—";
+function deltaText(d: number, suffix = "") {
+  if (!d) return "—";
+  return `${d > 0 ? "+" : ""}${d}${suffix}`;
+}
+
+export function Dashboard() {
+  const [f, setF] = useState({ from: "", to: "", dept: "", lang: "" });
+  const q = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+  const { data, isLoading } = useQuery({ queryKey: ["dash", q], queryFn: () => api(`/api/dashboard/summary?${q}`) });
+  const { data: emps } = useQuery({ queryKey: ["emps"], queryFn: () => api("/api/employees") });
+  const depts = [...new Set(((emps as any[]) || []).map((e) => e.department))];
+  const empName = (id: string) => (data?.employees || []).find((e: any) => e.id === id)?.name || "—";
+
+  const k = data?.kpis;
+  const attention: any[] = [
+    ...(data?.attention?.drops || []), ...(data?.attention?.critical || []),
+    ...(data?.attention?.flagged || []), ...(data?.attention?.failed || []), ...(data?.attention?.offline || []),
+  ];
+  const histLabels = ["<50", "50–60", "60–70", "70–85", "85+"];
+  const hist = (data?.charts?.buckets || []).map((v: number, i: number) => ({ label: histLabels[i], value: v }));
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-bold tracking-tight text-gray-900">Dashboard</h1>
-          <p className="text-xs text-gray-500">AI QA over 100% of calls. AI assists, humans decide.</p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/scorecard" className="btn-outline">QA scorecard</Link>
-          <button className="btn" onClick={() => setShowAdd((s) => !s)}><Plus className="h-4 w-4" /> Add employee</button>
-        </div>
+      <div>
+        <h1 className="text-lg font-bold tracking-tight text-gray-900">What needs my attention?</h1>
+        <p className="text-xs text-gray-500">Filters apply to everything below.</p>
       </div>
 
-      {lastKey && (
-        <Card className="border-indigo-200 bg-indigo-50/50 p-4">
-          <div className="text-xs font-semibold text-gray-900">Session key — shown once, copy now:</div>
-          <code className="mt-1 block break-all rounded-md bg-white p-2 text-xs ring-1 ring-indigo-200">{lastKey}</code>
-        </Card>
-      )}
-
-      {showAdd && (
-        <Card className="p-4">
-          <div className="flex flex-wrap items-end gap-2">
-            <div><label className="text-[11px] font-semibold text-gray-500">Name</label><input className="input mt-1 w-52" placeholder="Jane Doe" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-            <div><label className="text-[11px] font-semibold text-gray-500">Department</label><input className="input mt-1 w-40" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
-            <div><label className="text-[11px] font-semibold text-gray-500">Languages</label><input className="input mt-1 w-40" placeholder="en,fr" value={form.languages} onChange={(e) => setForm({ ...form, languages: e.target.value })} /></div>
-            <button className="btn" disabled={!form.name} onClick={() => create.mutate()}>Create + get key</button>
-          </div>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Employees" value={String(list.length)} hint="tracked agents" icon={<Users className="h-4 w-4 text-gray-400" />} />
-        <StatCard label="Calls analyzed" value={String(done.length)} hint={`of ${callList.length} total`} icon={<PhoneCall className="h-4 w-4 text-gray-400" />} />
-        <StatCard label="Avg score" value={done.length ? String(avg) : "—"} hint="across analyzed calls" icon={<Gauge className="h-4 w-4 text-gray-400" />} />
-        <StatCard label="Needs coaching" value={String(needCoach)} hint="scoring below 70" icon={<TriangleAlert className="h-4 w-4 text-gray-400" />} />
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Score trend" sub="last 20 analyzed calls" />
-          <div className="p-4"><LineChart points={trendPts} /></div>
-        </Card>
-        <Card>
-          <CardHeader title="Score by employee" sub="overall average" />
-          <div className="p-4"><BarChart bars={byEmp} /></div>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader title="Employees" sub="overall score + trend vs previous period" right={<span className="text-xs text-gray-400">{list.length} total</span>} />
-        {isLoading ? <p className="p-4 text-xs text-gray-500">Loading…</p> : !list.length ? (
-          <div className="p-4"><EmptyState title="No employees yet" hint="Add your first employee to get a session key for the desktop agent." action={<button className="btn" onClick={() => setShowAdd(true)}>Add employee</button>} /></div>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {list.map((e: any) => (
-              <li key={e.id}>
-                <Link href={`/employees/${e.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white">{e.name[0]}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-gray-900">{e.name}</div>
-                    <div className="truncate text-xs text-gray-500">{e.department} · {(e.languages || []).join(", ")}</div>
-                  </div>
-                  <span className="text-xs font-medium text-gray-500">{e.trend > 0 ? `↗ +${e.trend}` : e.trend < 0 ? `↘ ${e.trend}` : "→ 0"}</span>
-                  <Pill tone={scoreTone(e.overallScore || 0)}>{e.overallScore || "—"}</Pill>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+      <Card className="flex flex-wrap items-end gap-2 p-3">
+        <div><label className="text-[11px] font-semibold text-gray-500">From</label><input className="input mt-1 w-36" type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} /></div>
+        <div><label className="text-[11px] font-semibold text-gray-500">To</label><input className="input mt-1 w-36" type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} /></div>
+        <div><label className="text-[11px] font-semibold text-gray-500">Department</label>
+          <select className="input mt-1 w-36" value={f.dept} onChange={(e) => setF({ ...f, dept: e.target.value })}><option value="">all</option>{depts.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
+        <div><label className="text-[11px] font-semibold text-gray-500">Language</label>
+          <select className="input mt-1 w-28" value={f.lang} onChange={(e) => setF({ ...f, lang: e.target.value })}><option value="">all</option><option>en</option><option>fr</option><option>de</option><option>es</option></select></div>
       </Card>
 
-      <Card>
-        <CardHeader title="Recent calls" sub="click a row for transcript + evidence" />
-        {!recent.length ? <div className="p-4"><EmptyState title="No calls yet" hint="Seeded calls appear here, or install the desktop agent to upload real ones." /></div> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead><tr className="border-b border-gray-100">
-                <th className="table-head px-4 py-2">Employee</th><th className="table-head px-2 py-2">Date</th>
-                <th className="table-head px-2 py-2">Dur</th><th className="table-head px-2 py-2">Lang</th>
-                <th className="table-head px-2 py-2">Status</th><th className="table-head px-2 py-2 text-right">Score</th>
-              </tr></thead>
-              <tbody className="divide-y divide-gray-100">
-                {recent.map((c: any) => (
-                  <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2.5 font-medium text-gray-900"><Link className="hover:underline" href={`/calls/${c.id}`}>{empName(c.employeeId)}</Link></td>
-                    <td className="whitespace-nowrap px-2 py-2.5 text-gray-500">{new Date(c.startedAt).toLocaleString()}</td>
-                    <td className="px-2 py-2.5 text-gray-500">{c.durationSec}s</td>
-                    <td className="px-2 py-2.5 text-gray-500">{c.language}</td>
-                    <td className="px-2 py-2.5"><Pill tone={c.status === "done" ? "green" : c.status === "failed" ? "red" : "amber"}>{c.status}</Pill></td>
-                    <td className="px-2 py-2.5 text-right"><Pill tone={scoreTone(c.score)}>{c.score}</Pill></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {isLoading || !k ? <p className="text-xs text-gray-500">Loading…</p> : (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+            <StatCard label="Calls analyzed" value={String(k.calls.value)} hint={`Δ ${deltaText(k.calls.delta)} vs prev`} />
+            <StatCard label="Average score" value={k.avg.value ?? "—"} hint={`Δ ${deltaText(k.avg.delta)} vs prev`} />
+            <StatCard label="Critical failures" value={String(k.critical.value)} hint="must-pass criterion failed" />
+            <StatCard label="Needing coaching" value={String(k.needCoach.value)} hint="score below 70" />
+            <StatCard label="Coverage" value={k.coverage.value != null ? `${k.coverage.value}%` : "—"} hint={`${k.coverage.agentsOnline}/${k.coverage.agentsTotal} agents online`} />
+            <StatCard label="Follow-through" value={k.follow.value != null ? `${k.follow.value}%` : "—"} hint="action items done" />
           </div>
-        )}
-      </Card>
+
+          <Card className="border-amber-200">
+            <CardHeader title="Needs attention" sub={`${attention.length} open items`} />
+            {!attention.length ? <p className="p-4 text-xs text-gray-500">All clear. Nothing needs you right now.</p> : (
+              <ul className="divide-y divide-gray-100">
+                {attention.map((a: any, i: number) => {
+                  const m = KIND_META[a.kind] || KIND_META.offline;
+                  return (
+                    <li key={i}>
+                      <Link href={a.link} className="flex items-center gap-3 px-4 py-2.5 hover:bg-amber-50/50">
+                        <Pill tone={m.tone}><m.icon className="h-3 w-3" /></Pill>
+                        <span className="flex-1 text-xs font-medium text-gray-800">{a.text}</span>
+                        <span className="text-[11px] text-gray-400">Open →</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Card>
+              <CardHeader title="Team score trend" sub="daily average" />
+              <div className="p-4"><LineChart points={data.charts.trend} /></div>
+            </Card>
+            <Card>
+              <CardHeader title="Most-failed criteria" sub="fail count" />
+              <div className="p-4"><BarChart bars={data.charts.failedCrit.map((c: any) => ({ label: c.name.split(" ")[0], value: c.fails }))} color="#DC2626" /></div>
+            </Card>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-3">
+            <Card>
+              <CardHeader title="Score distribution" sub="analyzed calls" />
+              <div className="p-4"><BarChart bars={hist} color="#4F39F6" /></div>
+            </Card>
+            <Card>
+              <CardHeader title="Top improvers" sub="vs previous period" />
+              {!data.improvers.length ? <p className="p-4 text-xs text-gray-400">No data yet</p> : (
+                <ul className="divide-y divide-gray-100">
+                  {data.improvers.map((e: any) => (
+                    <li key={e.id}><Link href={`/employees/${e.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-gray-50">
+                      <span className="text-xs font-medium text-gray-800">{e.name}</span>
+                      <span className="text-xs font-semibold text-emerald-600">+{e.delta}</span>
+                    </Link></li>))}
+                </ul>)}
+            </Card>
+            <Card>
+              <CardHeader title="Biggest declines" sub="vs previous period" />
+              {!data.declines.length ? <p className="p-4 text-xs text-gray-400">No data yet</p> : (
+                <ul className="divide-y divide-gray-100">
+                  {data.declines.map((e: any) => (
+                    <li key={e.id}><Link href={`/employees/${e.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-gray-50">
+                      <span className="text-xs font-medium text-gray-800">{e.name}</span>
+                      <span className="flex items-center gap-1 text-xs font-semibold text-red-600"><TriangleAlert className="h-3 w-3" />{e.delta}</span>
+                    </Link></li>))}
+                </ul>)}
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader title="Recent calls" sub="latest 5" right={<Link href="/calls" className="text-xs font-semibold text-indigo-700 hover:underline">View all →</Link>} />
+            {!data.recent.length ? <div className="p-4"><EmptyState title="No calls yet" hint="Seeded calls appear here, or install the desktop agent." /></div> : (
+              <ul className="divide-y divide-gray-100">
+                {data.recent.map((c: any) => (
+                  <li key={c.id}>
+                    <Link href={`/calls/${c.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50">
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800">{empName(c.employeeId)} · {new Date(c.startedAt).toLocaleString()}</span>
+                      <Pill tone={c.status === "done" ? "green" : c.status === "failed" ? "red" : "amber"}>{c.status}</Pill>
+                      <Pill tone={scoreTone(c.score)}>{c.score}</Pill>
+                    </Link>
+                  </li>))}
+              </ul>)}
+          </Card>
+        </>
+      )}
     </div>
   );
 }

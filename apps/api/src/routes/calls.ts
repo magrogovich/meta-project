@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, or } from "drizzle-orm";
 import { db } from "../db/client.js";
 import * as s from "../db/schema.js";
 import { authMw } from "./auth.js";
@@ -116,18 +116,32 @@ callRouter.post("/", upload.single("audio"), async (req: any, res) => {
 // ---- desktop agent upload (session-key auth, chunked/resumable: single-chunk MVP + append chunks) ----
 export const agentRouter = Router();
 const chunks = new Map<string, Buffer[]>();
+// Key auth: HMAC lookup tag (new encrypted keys) with legacy sha256 fallback.
+// Revoked keys get a distinct error so the agent shows a clear error state.
+// The key grants upload rights for that employee's calls ONLY — no read access.
+async function findEmployeeByKey(key: string) {
+  const { keyTag } = await import("../lib/keys.js");
+  const { sha256 } = await import("../lib/util.js");
+  const rows = await db.select().from(s.employees).where(or(eq(s.employees.sessionKeyHmac, keyTag(key || "")), eq(s.employees.sessionKeyHash, sha256(key || ""))));
+  return rows[0] || null;
+}
 agentRouter.post("/validate", async (req, res) => {
   const key = (req.headers["x-session-key"] as string) || req.body?.sessionKey;
   if (!key) return res.status(401).json({ error: "no key" });
-  const rows = await db.select().from(s.employees).where(eq(s.employees.sessionKeyHash, sha256(key)));
-  if (!rows.length) return res.status(401).json({ error: "bad key" });
-  res.json({ ok: true, employee: { id: rows[0].id, name: rows[0].name, orgId: rows[0].orgId } });
+  const emp = await findEmployeeByKey(key);
+  if (!emp) return res.status(401).json({ error: "bad key" });
+  if (emp.sessionKeyRevoked) return res.status(403).json({ error: "key_revoked", message: "This session key was revoked by an admin. Ask for a new key." });
+  res.json({ ok: true, employee: { id: emp.id, name: emp.name, orgId: emp.orgId } });
 });
 agentRouter.post("/upload-chunk", upload.single("chunk"), async (req, res) => {
   const key = (req.headers["x-session-key"] as string) || req.body?.sessionKey;
   const { uploadId, index, total, employeeId, language, startedAt, transcript } = req.body || {};
-  const rows = await db.select().from(s.employees).where(eq(s.employees.sessionKeyHash, sha256(key || "")));
-  if (!rows.length) return res.status(401).json({ error: "bad key" });
+  const emp = await findEmployeeByKey(key || "");
+  if (!emp) return res.status(401).json({ error: "bad key" });
+  if (emp.sessionKeyRevoked) return res.status(403).json({ error: "key_revoked", message: "This session key was revoked by an admin. Ask for a new key." });
+  // The key is scoped: it may only upload for its own employee.
+  if (employeeId && employeeId !== emp.id) return res.status(403).json({ error: "key scoped to another employee" });
+  const rows = [emp];
   const id = uploadId || `u_${Date.now()}`;
   const arr = chunks.get(id) || [];
   arr[Number(index || 0)] = (req as any).file?.buffer || Buffer.alloc(0);
@@ -138,11 +152,100 @@ agentRouter.post("/upload-chunk", upload.single("chunk"), async (req, res) => {
     const dur = Math.max(10, Math.round(buf.length / 32000) || 30);
     const file = buf.length > 1000 ? saveAudio(buf, `agent_${Date.now()}.wav`) : saveAudio(synthWav(dur, 3), `agent_${Date.now()}.wav`);
     const [c] = await db.insert(s.calls).values({ orgId: rows[0].orgId, employeeId: employeeId || rows[0].id, language: language || "en", audioFile: file, status: "uploaded", transcript: tr, durationSec: dur, startedAt: startedAt ? new Date(startedAt) : new Date() }).returning();
+    await db.update(s.employees).set({ lastSeen: new Date(), agentStatus: "online", agentVersion: (req.headers["x-agent-version"] as string) || "" }).where(eq(s.employees.id, employeeId || rows[0].id));
     chunks.delete(id);
     processCall(c.id);
     return res.json({ done: true, callId: c.id });
   }
   res.json({ done: false, received: arr.filter(Boolean).length });
+});
+
+// ---- dashboard summary: "what needs my attention right now?" ----
+export const dashRouter = Router();
+dashRouter.use(authMw);
+dashRouter.get("/summary", async (req: any, res) => {
+  const { from, to, dept, lang } = req.query as any;
+  const orgId = req.user.orgId;
+  let emps = await db.select().from(s.employees).where(eq(s.employees.orgId, orgId));
+  if (dept) emps = emps.filter((e) => e.department === dept);
+  const empIds = new Set(emps.map((e) => e.id));
+  let callRows = await db.select().from(s.calls).where(eq(s.calls.orgId, orgId));
+  callRows = callRows.filter((c) => empIds.has(c.employeeId));
+  if (from) callRows = callRows.filter((c) => new Date(c.startedAt || 0) >= new Date(from));
+  if (to) callRows = callRows.filter((c) => new Date(c.startedAt || 0) <= new Date(to));
+  if (lang) callRows = callRows.filter((c) => c.language === lang);
+  const mid = from && to ? (+new Date(from) + +new Date(to)) / 2 : 0;
+  const prev = mid ? callRows.filter((c) => +new Date(c.startedAt || 0) < mid) : [];
+  const cur = mid ? callRows.filter((c) => +new Date(c.startedAt || 0) >= mid) : callRows;
+  const done = callRows.filter((c) => c.status === "done");
+  const doneCur = cur.filter((c) => c.status === "done");
+  const donePrev = prev.filter((c) => c.status === "done");
+  const avg = (a: typeof done) => (a.length ? a.reduce((x, c) => x + c.score, 0) / a.length : 0);
+  // must-pass criteria from latest scorecard (fallback: compliance id)
+  const scRows = await db.select().from(s.scorecards).where(eq(s.scorecards.orgId, orgId));
+  scRows.sort((a, b) => b.version - a.version);
+  const mustIds: Set<string> = new Set((scRows[0]?.criteria as any[] || []).filter((c) => c.mustPass).map((c) => c.id));
+  if (!mustIds.size) mustIds.add("compliance");
+  const callIds = new Set(callRows.map((c) => c.id));
+  const crit = (await db.select().from(s.criterionResults)).filter((r) => callIds.has(r.callId));
+  const critFail = (cid: string) => crit.some((r) => r.callId === cid && r.result === "fail" && mustIds.has(r.criterionId));
+  const critical = callRows.filter((c) => c.status === "done" && critFail(c.id));
+  const failed = callRows.filter((c) => c.status === "failed");
+  // per-employee current vs previous avg -> drops / improvers
+  const perEmp = emps.map((e) => {
+    const mine = doneCur.filter((c) => c.employeeId === e.id).map((c) => c.score);
+    const minePrev = donePrev.filter((c) => c.employeeId === e.id).map((c) => c.score);
+    const a = mine.length ? mine.reduce((x, y) => x + y, 0) / mine.length : 0;
+    const b = minePrev.length ? minePrev.reduce((x, y) => x + y, 0) / minePrev.length : 0;
+    return { id: e.id, name: e.name, department: e.department, score: Math.round(a * 10) / 10 || null, delta: mine.length && minePrev.length ? Math.round((a - b) * 10) / 10 : 0, calls: mine.length };
+  });
+  const drops = perEmp.filter((e) => e.delta <= -10 && e.calls > 0).sort((a, b) => a.delta - b.delta);
+  const improvers = perEmp.filter((e) => e.delta > 0 && e.calls > 0).sort((a, b) => b.delta - a.delta).slice(0, 5);
+  const declines = perEmp.filter((e) => e.delta < 0 && e.calls > 0).sort((a, b) => a.delta - b.delta).slice(0, 5);
+  const needCoach = perEmp.filter((e) => (e.score ?? 100) < 70 && e.calls > 0);
+  // human-flagged sessions
+  const sessions = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.orgId, orgId));
+  const flagged = sessions.filter((x) => x.humanFlag).slice(-5);
+  // agents: online if seen in last 15 min
+  const online = emps.filter((e) => e.lastSeen && Date.now() - +new Date(e.lastSeen) < 15 * 60e3).length;
+  const offline = emps.filter((e) => e.agentStatus !== "never" && !(e.lastSeen && Date.now() - +new Date(e.lastSeen) < 15 * 60e3));
+  // action items follow-through
+  const items = await db.select().from(s.actionItems).where(eq(s.actionItems.orgId, orgId));
+  const follow = items.length ? Math.round(items.filter((i) => i.status === "done").length / items.length * 100) : null;
+  // charts
+  const byDay: Record<string, number[]> = {};
+  for (const c of done) { const d = new Date(c.startedAt || 0).toISOString().slice(0, 10); (byDay[d] = byDay[d] || []).push(c.score); }
+  const trend = Object.entries(byDay).sort().map(([t, vs]) => ({ t, score: Math.round(vs.reduce((a, b) => a + b, 0) / vs.length * 10) / 10 }));
+  const byCrit: Record<string, { name: string; fails: number; total: number }> = {};
+  for (const r of crit) {
+    const k = byCrit[r.criterionId] = byCrit[r.criterionId] || { name: r.criterionName, fails: 0, total: 0 };
+    k.total++; if (r.result === "fail") k.fails++;
+  }
+  const failedCrit = Object.values(byCrit).sort((a, b) => b.fails - a.fails).slice(0, 6);
+  const buckets = [0, 0, 0, 0, 0]; // <50,50-60,60-70,70-85,85+
+  for (const c of done) buckets[c.score < 50 ? 0 : c.score < 60 ? 1 : c.score < 70 ? 2 : c.score < 85 ? 3 : 4]++;
+  const delta = (a: number, b: number) => (b ? Math.round((a - b) * 10) / 10 : 0);
+  res.json({
+    kpis: {
+      calls: { value: done.length, delta: doneCur.length - donePrev.length },
+      avg: { value: done.length ? Math.round(avg(done) * 10) / 10 : null, delta: delta(avg(doneCur), avg(donePrev)) },
+      critical: { value: critical.length, delta: 0 },
+      needCoach: { value: needCoach.length, delta: 0 },
+      coverage: { value: callRows.length ? Math.round(done.length / callRows.length * 100) : null, agentsOnline: online, agentsTotal: emps.length },
+      follow: { value: follow, delta: 0 },
+    },
+    attention: {
+      drops: drops.slice(0, 5).map((e) => ({ kind: "drop", employeeId: e.id, text: `${e.name} dropped ${e.delta} points`, link: `/employees/${e.id}` })),
+      critical: critical.slice(0, 5).map((c) => ({ kind: "critical", callId: c.id, text: `Critical failure: ${c.score} on ${new Date(c.startedAt || 0).toLocaleDateString()}`, link: `/calls/${c.id}` })),
+      flagged: flagged.map((x: any) => ({ kind: "flag", sessionId: x.id, text: `Human evaluator requested`, link: `/coach/${x.id}?token=${x.token}` })),
+      failed: failed.slice(0, 5).map((c) => ({ kind: "failed", callId: c.id, text: `Processing failed (${c.language})`, link: `/calls/${c.id}` })),
+      offline: offline.slice(0, 5).map((e) => ({ kind: "offline", employeeId: e.id, text: `${e.name}'s desktop agent offline`, link: `/employees/${e.id}` })),
+    },
+    charts: { trend, failedCrit, buckets },
+    improvers, declines,
+    recent: callRows.slice().sort((a, b) => +new Date(b.startedAt || 0) - +new Date(a.startedAt || 0)).slice(0, 5),
+    employees: emps.map((e) => ({ id: e.id, name: e.name })),
+  });
 });
 
 // ---- memos ----
@@ -169,9 +272,24 @@ memoRouter.post("/generate", async (req: any, res) => {
   const [m] = await db.insert(s.memos).values({ orgId: req.user.orgId, employeeId, periodFrom: from || "", periodTo: to || "", content }).returning();
   res.json(m);
 });
+memoRouter.get("/", async (req: any, res) => {
+  const { employeeId } = req.query as any;
+  let rows = await db.select().from(s.memos).where(eq(s.memos.orgId, req.user.orgId));
+  if (employeeId) rows = rows.filter((m) => m.employeeId === employeeId);
+  rows.sort((a, b) => +new Date(b.createdAt || 0) - +new Date(a.createdAt || 0));
+  res.json(rows);
+});
+memoRouter.patch("/:id", async (req: any, res) => {
+  const { content } = req.body || {};
+  const rows = await db.select().from(s.memos).where(eq(s.memos.id, req.params.id));
+  if (!rows.length || rows[0].orgId !== req.user.orgId) return res.status(404).json({ error: "not found" });
+  const [m] = await db.update(s.memos).set({ content: { ...(rows[0].content as object), ...(content || {}) } }).where(eq(s.memos.id, req.params.id)).returning();
+  res.json(m);
+});
 memoRouter.get("/:id", async (req: any, res) => {
   const rows = await db.select().from(s.memos).where(eq(s.memos.id, req.params.id));
-  res.json(rows[0] || null);
+  if (!rows.length || rows[0].orgId !== req.user.orgId) return res.status(404).json({ error: "not found" });
+  res.json(rows[0]);
 });
 
 // ---- coaching sessions ----
@@ -212,6 +330,7 @@ coachRouter.post("/:id/flag", async (req, res) => {
 });
 
 miscRouter.use("/scorecards", scoreRouter);
+miscRouter.use("/dashboard", dashRouter);
 miscRouter.use("/calls", callRouter);
 miscRouter.use("/agent", agentRouter);
 miscRouter.use("/memos", memoRouter);

@@ -13,7 +13,7 @@
 // mock paths, always labeled via the returned `mock: true` flags.
 import { splitChannels, turnsToLines, type Turn } from "./audio.js";
 
-export type Criterion = { id: string; name: string; description: string; weight: number; guidance: string };
+export type Criterion = { id: string; name: string; description: string; weight: number; guidance: string; mustPass?: boolean };
 export type TLine = { speaker: string; text: string; start: number; end: number };
 
 const BASE = (process.env.MUSE_BASE_URL || "https://api.meta.ai").replace(/\/$/, "");
@@ -119,7 +119,7 @@ export async function transcribeCallAudio(wav: Buffer, language = "en"): Promise
 export const DEFAULT_CRITERIA: Criterion[] = [
   { id: "greeting", name: "Greeting & Intro", description: "Greets customer, states name/company, offers help.", weight: 15, guidance: "Pass if agent greets within first 30s with name + company." },
   { id: "empathy", name: "Empathy & Listening", description: "Acknowledges feelings, no interrupting.", weight: 20, guidance: "Pass if at least one empathetic acknowledgement." },
-  { id: "compliance", name: "Compliance & Accuracy", description: "No false promises, follows policy, verifies identity where needed.", weight: 25, guidance: "Fail on any false statement or skipped verification." },
+  { id: "compliance", name: "Compliance & Accuracy", description: "No false promises, follows policy, verifies identity where needed.", weight: 25, guidance: "Fail on any false statement or skipped verification.", mustPass: true },
   { id: "resolution", name: "Resolution & Next steps", description: " Solves issue or sets clear next step with timeline.", weight: 25, guidance: "Pass if outcome or dated next step stated." },
   { id: "closing", name: "Closing & Upsell", description: "Summarizes, asks if anything else, polite close.", weight: 15, guidance: "Pass if summary + close present." },
 ];

@@ -1,9 +1,10 @@
 import "./lib/env.js";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db, pool } from "./db/client.js";
 import * as s from "./db/schema.js";
 import { DEFAULT_CRITERIA } from "./lib/muse.js";
-import { sha256, newSessionKey, saveAudio, synthWav } from "./lib/util.js";
+import { newSessionKey, encryptKey, keyTag } from "./lib/keys.js";
+import { saveAudio, synthWav } from "./lib/util.js";
 import { processCall } from "./routes/calls.js";
 import { ensureSchema } from "./db/migrate.js";
 import bcrypt from "bcryptjs";
@@ -59,9 +60,11 @@ if (!users.length) {
 } else { orgId = users[0].orgId; console.log(`using login ${email} / ${pass}`); }
 
 const existing = await db.select().from(s.employees).where(eq(s.employees.orgId, orgId));
-// FK order: coaching sessions -> memos -> criterion results -> calls -> employees
+// FK order: coaching sessions -> memos -> action items -> audit -> criterion results -> calls -> employees
 await db.delete(s.coachingSessions).where(eq(s.coachingSessions.orgId, orgId));
 await db.delete(s.memos).where(eq(s.memos.orgId, orgId));
+await db.delete(s.actionItems).where(eq(s.actionItems.orgId, orgId));
+await db.delete(s.auditLog).where(eq(s.auditLog.orgId, orgId));
 for (const e of existing) {
   const cs = await db.select().from(s.calls).where(eq(s.calls.employeeId, e.id));
   for (const c of cs) await db.delete(s.criterionResults).where(eq(s.criterionResults.callId, c.id));
@@ -70,10 +73,14 @@ for (const e of existing) {
 }
 
 // 5 employees: improver (idx0: 45->92), decliner (idx1: 90->48), others mid
+for (const d of DEPTS) {
+  const rows = await db.select().from(s.departments).where(and(eq(s.departments.orgId, orgId), eq(s.departments.name, d)));
+  if (!rows.length) await db.insert(s.departments).values({ orgId, name: d });
+}
 for (let i = 0; i < 5; i++) {
   const name = `${FIRST[i]} ${LAST[i]}`;
   const key = newSessionKey();
-  const [e] = await db.insert(s.employees).values({ orgId, name, department: DEPTS[i % 4], languages: [LANGS[i % 4], "en"], startDate: "2025-01-15", sessionKeyHash: sha256(key), sessionKeyPrefix: key.slice(0, 8) }).returning();
+  const [e] = await db.insert(s.employees).values({ orgId, name, department: DEPTS[i % 4], languages: [LANGS[i % 4], "en"], startDate: "2025-01-15", sessionKeyHash: "", sessionKeyPrefix: key.slice(0, 8), sessionKeyEnc: encryptKey(key), sessionKeyHmac: keyTag(key), sessionKeyRevoked: false, status: "active" }).returning();
   console.log(`employee ${name} key=${key}`);
   for (let k = 0; k < 8; k++) {
     let q: number;
@@ -89,4 +96,11 @@ for (let i = 0; i < 5; i++) {
   }
 }
 console.log("seed done: 5 employees x 8 calls = 40");
+const allEmps = await db.select().from(s.employees).where(eq(s.employees.orgId, orgId));
+for (let i = 0; i < allEmps.length; i++) {
+  await db.insert(s.actionItems).values([
+    { orgId, employeeId: allEmps[i].id, text: "Use the empathy opener on every call", status: i % 2 ? "done" : "open", source: "coach" },
+    { orgId, employeeId: allEmps[i].id, text: "Apply the 3-step close", status: i % 3 === 0 ? "done" : "open", source: "memo" },
+  ]);
+}
 await pool.end();

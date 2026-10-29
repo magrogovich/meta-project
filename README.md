@@ -8,8 +8,8 @@ AI QA for 100% of call-center calls. Stack: pnpm workspaces · Express 5 + esbui
 4. `pnpm --filter @arocall/api seed` — demo org login `demo@arocall.ai / demo1234`, 5 employees × 8 calls
 5. `pnpm dev` — starts API :4000 + dashboard :5173 together (logs prefixed `[api]` / `[web]`)
 
-Demo flow: signup/login → walkthrough (Help) → Scorecard paste policy → Employees add (copy session key ONCE) → employee profile shows seeded calls → call detail (audio + transcript click-to-seek + evidence quotes) → Generate memo → Print/PDF → Start AI coaching → open link → voice/text coach (Web Speech + speechSynthesis; mock-labeled without MUSE keys).
-Agent: `cd agent && npm run setup` (paste key) then `npm start`; drop a .wav into `agent/inbox/` to simulate a recorded call — it chunk-uploads and appears analyzed.
+Demo flow: login → walkthrough (Help) → Guidelines (Phase 6: Markdown; until then QA scorecard page is hidden) → Employees (add via wizard, copy/reveal the persistent session key) → employee profile → call detail (audio + transcript click-to-seek + evidence quotes) → coaching memos + AI coaching voice session.
+Agent: `cd agent && npm run setup` (paste key) then `npm start`; drop a .wav into `agent/inbox/` to simulate a recorded call — it chunk-uploads and appears analyzed. Keys are persistent and revealable (masked + eye icon, copy logged); regenerate/revoke from the employee Agent tab. Revoked keys make the agent show a clear error and pause uploads.
 
 ## Database / migrations
 No manual schema push needed: the API runs `ensureSchema()` (`apps/api/src/db/migrate.ts`) on boot and the seed script runs it too, creating all tables with `CREATE TABLE IF NOT EXISTS`. Just create the empty database and start the API.

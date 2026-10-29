@@ -34,8 +34,14 @@ export const employees = pgTable("employees", {
   startDate: text("start_date").notNull().default(""),
   sessionKeyHash: text("session_key_hash").notNull().default(""),
   sessionKeyPrefix: text("session_key_prefix").notNull().default(""),
+  sessionKeyEnc: text("session_key_enc").notNull().default(""),
+  sessionKeyHmac: text("session_key_hmac").notNull().default(""),
+  sessionKeyRevoked: boolean("session_key_revoked").notNull().default(false),
   status: text("status").notNull().default("active"),
   overallScore: real("overall_score").notNull().default(0),
+  agentStatus: text("agent_status").notNull().default("never"),
+  lastSeen: timestamp("last_seen"),
+  agentVersion: text("agent_version").notNull().default(""),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -98,6 +104,23 @@ export const coachingSessions = pgTable("coaching_sessions", {
   actionItems: jsonb("action_items").$type<string[]>().notNull().default([]),
   humanFlag: boolean("human_flag").notNull().default(false),
   token: text("token").notNull().default(""),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const departments = pgTable("departments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id").notNull().references(() => orgs.id),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const actionItems = pgTable("action_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id").notNull().references(() => orgs.id),
+  employeeId: uuid("employee_id").notNull().references(() => employees.id),
+  text: text("text").notNull(),
+  status: text("status").notNull().default("open"),
+  source: text("source").notNull().default("coach"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

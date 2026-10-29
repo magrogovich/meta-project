@@ -10,6 +10,15 @@ CREATE TABLE IF NOT EXISTS calls (id uuid primary key default gen_random_uuid(),
 CREATE TABLE IF NOT EXISTS criterion_results (id uuid primary key default gen_random_uuid(), call_id uuid not null references calls(id), criterion_id text not null, criterion_name text not null default '', result text not null, score real not null default 0, evidence_quote text not null default '', evidence_start real not null default 0);
 CREATE TABLE IF NOT EXISTS memos (id uuid primary key default gen_random_uuid(), org_id uuid not null references orgs(id), employee_id uuid not null references employees(id), period_from text not null default '', period_to text not null default '', content jsonb not null default '{}', created_at timestamp default now());
 CREATE TABLE IF NOT EXISTS coaching_sessions (id uuid primary key default gen_random_uuid(), org_id uuid not null references orgs(id), employee_id uuid not null references employees(id), memo_id uuid references memos(id), topics text not null default '', transcript jsonb not null default '[]', summary text not null default '', action_items jsonb not null default '[]', human_flag boolean not null default false, token text not null default '', created_at timestamp default now());
+CREATE TABLE IF NOT EXISTS action_items (id uuid primary key default gen_random_uuid(), org_id uuid not null references orgs(id), employee_id uuid not null references employees(id), text text not null, status text not null default 'open', source text not null default 'coach', created_at timestamp default now());
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS agent_status text not null default 'never';
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_seen timestamp;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS agent_version text not null default '';
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS session_key_enc text not null default '';
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS session_key_hmac text not null default '';
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS session_key_revoked boolean not null default false;
+CREATE TABLE IF NOT EXISTS departments (id uuid primary key default gen_random_uuid(), org_id uuid not null references orgs(id), name text not null, created_at timestamp default now());
+CREATE UNIQUE INDEX IF NOT EXISTS departments_org_name ON departments (org_id, name);
 CREATE TABLE IF NOT EXISTS audit_log (id uuid primary key default gen_random_uuid(), org_id uuid not null references orgs(id), user_id text not null default '', action text not null, call_id text not null default '', created_at timestamp default now());
 `;
 export async function ensureSchema() { await pool.query(DDL); }

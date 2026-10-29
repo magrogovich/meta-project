@@ -2,7 +2,7 @@ import "./lib/env.js";
 import { eq, and } from "drizzle-orm";
 import { db, pool } from "./db/client.js";
 import * as s from "./db/schema.js";
-import { DEFAULT_CRITERIA } from "./lib/muse.js";
+import { generateCriteria } from "./lib/muse.js";
 import { newSessionKey, encryptKey, keyTag } from "./lib/keys.js";
 import { saveAudio, synthWav } from "./lib/util.js";
 import { processCall } from "./routes/calls.js";
@@ -55,9 +55,30 @@ if (!users.length) {
   orgId = org.id;
   const hash = await bcrypt.hash(pass, 10);
   await db.insert(s.users).values({ orgId, email, name: "Demo Admin", passwordHash: hash, role: "admin" });
-  await db.insert(s.scorecards).values({ orgId, version: 1, criteria: DEFAULT_CRITERIA, sourceText: "Demo QA policy" });
   console.log(`created login ${email} / ${pass}`);
 } else { orgId = users[0].orgId; console.log(`using login ${email} / ${pass}`); }
+
+// Sample guidelines document + approved criteria set (Guidelines system)
+{
+  const { readFileSync, existsSync } = await import("fs");
+  const { join, dirname } = await import("path");
+  const { fileURLToPath } = await import("url");
+  const { hashContent, splitSections } = await import("./lib/guidelines.js");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const samplePath = join(here, "..", "seed", "guidelines-sample.md");
+  const md = existsSync(samplePath) ? readFileSync(samplePath, "utf8") : "# Guidelines\n\n## Greeting\n\nGreet every caller.\n";
+  const prior = await db.select().from(s.guidelines).where(eq(s.guidelines.orgId, orgId));
+  if (!prior.length) {
+    const [d] = await db.insert(s.guidelines).values({ orgId, title: "Call Handling Guidelines", status: "active", currentVersion: 1, createdBy: "seed" }).returning();
+    const sections = splitSections(md).map(({ id, path, level, title }) => ({ id, path, level, title }));
+    await db.insert(s.guidelineVersions).values({ guidelineId: d.id, version: 1, markdown: md, contentHash: hashContent(md), sections, createdBy: "seed" });
+    const { criteria } = await generateCriteria([{ guidelineId: d.id, version: 1, markdown: md }]);
+    if (criteria.length) {
+      await db.insert(s.criteriaSets).values({ orgId, version: 1, status: "approved", criteria, guidelineRefs: { [d.id]: 1 }, stale: false });
+      console.log(`seeded guidelines + approved criteria v1 (${criteria.length} criteria)`);
+    }
+  }
+}
 
 const existing = await db.select().from(s.employees).where(eq(s.employees.orgId, orgId));
 // FK order: coaching sessions -> memos -> action items -> audit -> criterion results -> calls -> employees

@@ -1,63 +1,7 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../lib/api";
-import { Link } from "wouter";
-import { ArrowLeft, Wand2, Save, Mic, Hand } from "lucide-react";
-import { Card, CardHeader, Pill } from "../components/ui";
-
-export function Scorecard() {
-  const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["sc"], queryFn: () => api("/api/scorecards") });
-  const [text, setText] = useState("Agents must greet with name, show empathy, verify identity, resolve with next steps, and close politely.");
-  const [draft, setDraft] = useState<any[]>([]);
-  const gen = useMutation({ mutationFn: () => api("/api/scorecards/generate", { method: "POST", body: JSON.stringify({ text }) }), onSuccess: (r) => setDraft(r.criteria) });
-  const save = useMutation({ mutationFn: () => api("/api/scorecards", { method: "POST", body: JSON.stringify({ criteria: draft, sourceText: text }) }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["sc"] }); setDraft([]); } });
-  const cur = data?.[0];
-  return (
-    <div className="mx-auto w-full max-w-4xl space-y-4">
-      <Link href="/" className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900"><ArrowLeft className="h-3.5 w-3.5" /> Dashboard</Link>
-      <div>
-        <h1 className="text-lg font-bold tracking-tight text-gray-900">QA Policy / Scorecard {cur ? <Pill tone="gray">v{cur.version}</Pill> : ""}</h1>
-        <p className="text-xs text-gray-500">Paste the policy, convert with AI, review, save as a new version. Calls keep the version that scored them.</p>
-      </div>
-      <Card className="p-4">
-        <p className="text-xs font-semibold text-gray-900">Policy text</p>
-        <textarea className="input mt-2 h-28" value={text} onChange={(e) => setText(e.target.value)} />
-        <div className="mt-2 flex items-center gap-2">
-          <input className="text-xs text-gray-500" type="file" accept=".pdf,.docx,.txt" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setText(await f.text().catch(() => "")); }} />
-          <button className="btn ml-auto" onClick={() => gen.mutate()}><Wand2 className="h-3.5 w-3.5" /> Convert with AI</button>
-        </div>
-        {gen.data?.note && <p className="mt-1 text-[11px] text-gray-400">{gen.data.note}</p>}
-      </Card>
-      {!!draft.length && (
-        <Card className="p-4">
-          <p className="text-xs font-semibold text-gray-900">Review criteria (weights should sum to 100)</p>
-          <div className="mt-2 space-y-2">
-            {draft.map((c: any, i: number) => (
-              <div key={i} className="grid grid-cols-12 gap-2">
-                <input className="input col-span-3" value={c.name} onChange={(e) => setDraft(draft.map((d, j) => (j === i ? { ...d, name: e.target.value } : d)))} />
-                <input className="input col-span-5" value={c.description} onChange={(e) => setDraft(draft.map((d, j) => (j === i ? { ...d, description: e.target.value } : d)))} />
-                <input className="input col-span-1" type="number" value={c.weight} onChange={(e) => setDraft(draft.map((d, j) => (j === i ? { ...d, weight: Number(e.target.value) } : d)))} />
-                <input className="input col-span-3" value={c.guidance} onChange={(e) => setDraft(draft.map((d, j) => (j === i ? { ...d, guidance: e.target.value } : d)))} />
-              </div>))}
-          </div>
-          <button className="btn mt-3" onClick={() => save.mutate()}><Save className="h-3.5 w-3.5" /> Save as new version</button>
-        </Card>)}
-      {cur && (
-        <Card>
-          <CardHeader title={`Active scorecard v${cur.version}`} sub={`${cur.criteria.length} criteria`} />
-          <ul className="divide-y divide-gray-100">
-            {cur.criteria.map((c: any) => (
-              <li key={c.id} className="px-4 py-2.5 text-xs">
-                <span className="font-semibold text-gray-900">{c.name}</span> <Pill tone="gray">{c.weight}</Pill>
-                <span className="text-gray-500"> — {c.description} <i>{c.guidance}</i></span>
-              </li>))}
-          </ul>
-        </Card>)}
-    </div>
-  );
-}
-
+import { Mic, Hand } from "lucide-react";
+import { Card, Pill } from "../components/ui";
 export function Coach() {
   const id = location.pathname.split("/")[2];
   const token = new URLSearchParams(location.search).get("token") || "";

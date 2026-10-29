@@ -115,7 +115,7 @@ export async function transcribeCallAudio(wav: Buffer, language = "en"): Promise
   return { lines, mock: false };
 }
 
-// --- Scorecard extraction ---
+// --- Default criteria (fallback when no approved set exists yet) ---
 export const DEFAULT_CRITERIA: Criterion[] = [
   { id: "greeting", name: "Greeting & Intro", description: "Greets customer, states name/company, offers help.", weight: 15, guidance: "Pass if agent greets within first 30s with name + company." },
   { id: "empathy", name: "Empathy & Listening", description: "Acknowledges feelings, no interrupting.", weight: 20, guidance: "Pass if at least one empathetic acknowledgement." },
@@ -123,29 +123,6 @@ export const DEFAULT_CRITERIA: Criterion[] = [
   { id: "resolution", name: "Resolution & Next steps", description: " Solves issue or sets clear next step with timeline.", weight: 25, guidance: "Pass if outcome or dated next step stated." },
   { id: "closing", name: "Closing & Upsell", description: "Summarizes, asks if anything else, polite close.", weight: 15, guidance: "Pass if summary + close present." },
 ];
-
-export async function scorecardFromPolicy(policyText: string): Promise<{ criteria: Criterion[]; mock: boolean }> {
-  if (!isMock) {
-    try {
-      const raw = await llm(
-        "You convert QA policies to scorecard JSON. Reply ONLY JSON: {\"criteria\":[{\"id\",\"name\",\"description\",\"weight\",\"guidance\"}]} weights sum to 100.",
-        policyText.slice(0, 8000), true);
-      const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
-      if (Array.isArray(parsed.criteria) && parsed.criteria.length) {
-        const sum = parsed.criteria.reduce((a: number, c: any) => a + Number(c.weight || 0), 0) || 100;
-        const criteria = parsed.criteria.map((c: any, i: number) => ({
-          id: String(c.id || c.name || `c${i + 1}`).toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-          name: String(c.name || `Criterion ${i + 1}`), description: String(c.description || ""),
-          weight: Math.round((Number(c.weight) || 0) * 100 / sum), guidance: String(c.guidance || ""),
-        }));
-        return { criteria, mock: false };
-      }
-    } catch { /* fall through to mock */ }
-  }
-  const t = policyText.toLowerCase();
-  const picks = DEFAULT_CRITERIA.filter((c) => t.includes(c.id.slice(0, 4)) || t.length < 50);
-  return { criteria: picks.length ? picks : DEFAULT_CRITERIA, mock: true };
-}
 
 // --- Deterministic fallback scorer: guarantees verbatim quotes ---
 export function deterministicScore(transcript: TLine[], criteria: Criterion[], language = "en") {
@@ -182,12 +159,12 @@ export function deterministicScore(transcript: TLine[], criteria: Criterion[], l
   };
 }
 
-export async function scoreCall(transcript: TLine[], criteria: Criterion[], language = "en") {
+export async function scoreCall(transcript: TLine[], criteria: (Criterion & { guidelineRefs?: string[] })[], language = "en", guidelinesText = "") {
   if (!isMock) {
     try {
       const raw = await llm(
-        "You are a call-center QA scorer. Reply ONLY JSON {\"language\",\"summary\",\"wentWell\":[],\"wentWrong\":[],\"tags\":[],\"results\":[{\"criterionId\",\"result\":\"pass|partial|fail\",\"score\":0-100,\"evidenceQuote\":\"verbatim line\",\"evidenceStart\":number}]}. Every evidenceQuote MUST be a verbatim transcript line.",
-        JSON.stringify({ criteria, transcript }).slice(0, 12000), true);
+        "You are a call-center QA scorer. Reply ONLY JSON {\"language\",\"summary\",\"wentWell\":[],\"wentWrong\":[],\"tags\":[],\"results\":[{\"criterionId\",\"result\":\"pass|partial|fail\",\"score\":0-100,\"evidenceQuote\":\"verbatim line\",\"evidenceStart\":number,\"guidelineRef\":\"guidelineId:sectionId\"}]}. Every evidenceQuote MUST be a verbatim transcript line. Every guidelineRef MUST be one of the criterion's cited sections.",
+        JSON.stringify({ guidelines: guidelinesText.slice(0, 20000), criteria, transcript }).slice(0, 24000), true);
       const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
       const full = transcript.map((t) => t.text);
       const norm = (s: string) => s.trim().toLowerCase();
@@ -197,15 +174,71 @@ export async function scoreCall(transcript: TLine[], criteria: Criterion[], lang
           const fb = transcript.find((t) => t.speaker === "Agent") || transcript[0];
           r.evidenceQuote = fb.text; r.evidenceStart = fb.start;
         }
+        const crit = criteria.find((c) => c.id === r.criterionId);
+        if (!crit?.guidelineRefs?.includes(r.guidelineRef)) r.guidelineRef = crit?.guidelineRefs?.[0] || "";
       }
       const num = (parsed.results || []).reduce((a: number, r: any) => a + r.score * (criteria.find((c) => c.id === r.criterionId)?.weight ?? 0), 0);
       const den = criteria.reduce((a, c) => a + c.weight, 0) || 1;
       return { ...parsed, total: Math.round((num / den) * 10) / 10, mock: false };
     } catch { /* fallback */ }
   }
-  return { ...deterministicScore(transcript, criteria, language), mock: true };
+  const d = deterministicScore(transcript, criteria, language);
+  return { ...d, results: d.results.map((r: any) => ({ ...r, guidelineRef: criteria.find((c) => c.id === r.criterionId)?.guidelineRefs?.[0] || "" })), mock: true };
 }
 
 export function coachSystemPrompt(ctx: { employee: string; scores: string; memo: string; evidence: string; policy: string }) {
   return `You are Aro, a supportive English-only AI voice coach for call-center agent ${ctx.employee}. RULES: reference real call examples only from EVIDENCE below, never invent calls; never make employment decisions (no firing/warning/pay/promotion); ask the agent's perspective; role-play one difficult customer scenario; end agreeing 2-3 action items; if complaints/harassment/health issues arise, offer to flag a human evaluator. SCORES: ${ctx.scores}. MEMO: ${ctx.memo}. EVIDENCE: ${ctx.evidence}. POLICY: ${ctx.policy.slice(0, 2000)}. Language: English (config COACH_LANG for future).`;
+}
+
+export type GenCriterion = { id: string; name: string; description: string; weight: number; mustPass?: boolean; guidance: string; guidelineRefs?: string[] };
+
+// Draft evaluation criteria from guideline documents. Never invents rules outside the docs:
+// every criterion must cite the section(s) it comes from (validated below).
+export async function generateCriteria(parts: { guidelineId: string; version: number; markdown: string }[]): Promise<{ criteria: GenCriterion[]; mock: boolean }> {
+  const validRefs = new Set<string>();
+  const { splitSections } = await import("./guidelines.js");
+  for (const p of parts) for (const sec of splitSections(p.markdown)) validRefs.add(`${p.guidelineId}:${sec.id}`);
+  const clean = (list: any[]): GenCriterion[] => {
+    const out: GenCriterion[] = [];
+    for (const c of list || []) {
+      const refs = (c.guidelineRefs || []).filter((r: string) => validRefs.has(r));
+      if (!refs.length) continue; // no invented rules: drop criteria citing nothing real
+      out.push({
+        id: String(c.id || c.name || `c${out.length + 1}`).toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        name: String(c.name || "Criterion"), description: String(c.description || ""),
+        weight: Number(c.weight) || 10, mustPass: !!c.mustPass,
+        guidance: String(c.guidance || ""), guidelineRefs: refs,
+      });
+    }
+    const sum = out.reduce((a, c) => a + c.weight, 0) || 1;
+    for (const c of out) c.weight = Math.round((c.weight / sum) * 100);
+    return out;
+  };
+  if (!isMock) {
+    try {
+      const raw = await llm(
+        "You draft call-center evaluation criteria from guideline documents. Reply ONLY JSON {\"criteria\":[{\"id\",\"name\",\"description\",\"weight\",\"mustPass\":bool,\"guidance\",\"guidelineRefs\":[\"guidelineId:sectionId\"]}]}. RULES: every criterion MUST cite at least one real section id from the input via guidelineRefs; never invent rules not present in the documents; weights sum to 100.",
+        JSON.stringify(parts.map((p) => ({ guidelineId: p.guidelineId, version: p.version, markdown: p.markdown.slice(0, 6000) }))).slice(0, 20000), true);
+      const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
+      const criteria = clean(parsed.criteria);
+      if (criteria.length) return { criteria, mock: false };
+    } catch { /* fall through */ }
+  }
+  // Deterministic mock: map known section topics to criteria, citing real sections.
+  const topics: { match: RegExp; base: Omit<GenCriterion, "guidelineRefs"> }[] = [
+    { match: /greet|intro/i, base: { id: "greeting", name: "Greeting & Intro", description: "Greets customer, states name/company, offers help.", weight: 15, guidance: "Pass if agent greets within first 30s with name + company." } },
+    { match: /empathy|tone|listen/i, base: { id: "empathy", name: "Empathy & Listening", description: "Acknowledges feelings, no interrupting.", weight: 20, guidance: "Pass if at least one empathetic acknowledgement." } },
+    { match: /complian|identif|consent|do.*n.t|don't/i, base: { id: "compliance", name: "Compliance & Accuracy", description: "No false promises, follows policy, verifies identity.", weight: 25, mustPass: true, guidance: "Fail on any false statement or skipped verification." } },
+    { match: /resol|escalat|next step|do's/i, base: { id: "resolution", name: "Resolution & Next steps", description: "Solves issue or sets clear next step with timeline.", weight: 25, guidance: "Pass if outcome or dated next step stated." } },
+    { match: /clos/i, base: { id: "closing", name: "Closing", description: "Summarizes, asks if anything else, polite close.", weight: 15, guidance: "Pass if summary + close present." } },
+  ];
+  const mock: GenCriterion[] = [];
+  for (const p of parts) {
+    for (const sec of splitSections(p.markdown)) {
+      const t = topics.find((x) => x.match.test(sec.title + " " + sec.body.slice(0, 300)));
+      if (t && !mock.some((m) => m.id === t.base.id)) mock.push({ ...t.base, guidelineRefs: [`${p.guidelineId}:${sec.id}`] });
+    }
+  }
+  const criteria = clean(mock.length ? mock : [{ ...topics[0].base, guidelineRefs: [`${parts[0].guidelineId}:${splitSections(parts[0].markdown)[0].id}`] }]);
+  return { criteria, mock: true };
 }

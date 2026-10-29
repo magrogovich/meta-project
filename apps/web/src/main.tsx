@@ -8,9 +8,12 @@ import { AppLayout } from "./components/layout";
 import { Login, Walkthrough } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { EmployeeProfile, CallDetail } from "./pages/Employee";
-import { Scorecard, Coach } from "./pages/Misc";
 import { ComingSoon, Analytics } from "./pages/Stub";
 import { Employees } from "./pages/Employees";
+import { Calls } from "./pages/Calls";
+import { Coaching } from "./pages/Coaching";
+import { Guidelines, GuidelineDoc } from "./pages/Guidelines";
+import { Coach } from "./pages/Misc";
 
 const qc = new QueryClient();
 function Shell() {
@@ -35,12 +38,12 @@ function App() {
                 <Route path="/employees"><Employees /></Route>
                 <Route path="/employees/:id"><EmployeeProfile /></Route>
                 <Route path="/calls/:id"><CallDetail /></Route>
-                <Route path="/calls"><ComingSoon title="Calls" hint="Global call table with filters, sorting and pagination lands in Phase 4." /></Route>
-                <Route path="/coaching"><ComingSoon title="Coaching" hint="Coaching queue, memos, sessions and action items land in Phase 5." /></Route>
-                <Route path="/guidelines"><ComingSoon title="Guidelines" hint="Markdown guidelines replace QA scorecards in Phase 6." /></Route>
+                <Route path="/calls"><Calls /></Route>
+                <Route path="/coaching"><Coaching /></Route>
+                <Route path="/guidelines"><Guidelines /></Route>
+                <Route path="/guidelines/:id"><GuidelineDoc /></Route>
                 <Route path="/analytics"><Analytics /></Route>
                 <Route path="/settings"><ComingSoon title="Settings" hint="Organization, team, departments, coaching rules and audit log land in Phase 7." /></Route>
-                <Route path="/scorecard"><Scorecard /></Route>
                 <Route><Redirect to="/" /></Route>
               </Switch>
             </AppLayout>

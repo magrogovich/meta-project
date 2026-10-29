@@ -9,6 +9,7 @@ import * as schema from "./db/schema.js";
 import { authRouter } from "./routes/auth.js";
 import { empRouter, deptRouter } from "./routes/employees.js";
 import { coachRouter2 } from "./routes/coaching.js";
+import { guideRouter } from "./routes/guidelines.js";
 import { miscRouter } from "./routes/calls.js";
 
 const log = pino({ level: "info" });
@@ -25,6 +26,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/employees", empRouter);
 app.use("/api/departments", deptRouter);
 app.use("/api/coaching", coachRouter2);
+app.use("/api/guidelines", guideRouter);
 app.use("/api", miscRouter);
 
 const PORT = Number(process.env.PORT || 4000);

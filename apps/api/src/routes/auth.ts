@@ -23,7 +23,7 @@ authRouter.post("/signup", async (req, res) => {
   const [org] = await db.insert(s.orgs).values({ name: orgName || `${email.split("@")[0]}'s org` }).returning();
   const hash = await bcrypt.hash(password, 10);
   const [user] = await db.insert(s.users).values({ orgId: org.id, email, name: name || email.split("@")[0], passwordHash: hash, role: "admin" }).returning();
-  await db.insert(s.scorecards).values({ orgId: org.id, version: 1, criteria: (await import("../lib/muse.js")).DEFAULT_CRITERIA, sourceText: "Default QA scorecard" });
+  await (await import("../lib/bootstrap.js")).bootstrapOrg(org.id, email);
   res.json({ token: sign(user), user: { id: user.id, email: user.email, role: user.role, orgId: org.id } });
 });
 authRouter.post("/login", async (req, res) => {
@@ -65,7 +65,7 @@ authRouter.post("/google", async (req, res) => {
   if (!rows.length) {
     const [org] = await db.insert(s.orgs).values({ name: `${email_l.split("@")[0]}'s org` }).returning();
     const [u] = await db.insert(s.users).values({ orgId: org.id, email: email_l, name: verifiedName || email_l.split("@")[0], role: "admin" }).returning();
-    await db.insert(s.scorecards).values({ orgId: org.id, version: 1, criteria: (await import("../lib/muse.js")).DEFAULT_CRITERIA, sourceText: "Default QA scorecard" });
+    await (await import("../lib/bootstrap.js")).bootstrapOrg(org.id, email_l);
     rows = [u];
   }
   res.json({ token: sign(rows[0]), mock: !clientId, user: { id: rows[0].id, email: rows[0].email, role: rows[0].role, orgId: rows[0].orgId } });

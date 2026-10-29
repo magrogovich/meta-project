@@ -3,6 +3,7 @@ import { pgTable, uuid, text, timestamp, integer, real, jsonb, boolean } from "d
 export const orgs = pgTable("orgs", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
+  settings: jsonb("settings").$type<{ coaching?: { scoreBelow?: number; dropPoints?: number; criticalCount?: number } }>().notNull().default({}),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -45,15 +46,6 @@ export const employees = pgTable("employees", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const scorecards = pgTable("scorecards", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  orgId: uuid("org_id").notNull().references(() => orgs.id),
-  version: integer("version").notNull(),
-  criteria: jsonb("criteria").$type<{ id: string; name: string; description: string; weight: number; guidance: string }[]>().notNull(),
-  sourceText: text("source_text").notNull().default(""),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 export const calls = pgTable("calls", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: uuid("org_id").notNull().references(() => orgs.id),
@@ -65,7 +57,8 @@ export const calls = pgTable("calls", {
   status: text("status").notNull().default("uploaded"),
   transcript: jsonb("transcript").$type<{ speaker: string; text: string; start: number; end: number }[]>().notNull().default([]),
   score: real("score").notNull().default(0),
-  scorecardVersion: integer("scorecard_version").notNull().default(1),
+  criteriaVersion: integer("criteria_version").notNull().default(1),
+  guidelineRefs: jsonb("guideline_refs").$type<Record<string, number>>().notNull().default({}),
   summary: text("summary").notNull().default(""),
   wentWell: jsonb("went_well").$type<string[]>().notNull().default([]),
   wentWrong: jsonb("went_wrong").$type<string[]>().notNull().default([]),
@@ -81,6 +74,7 @@ export const criterionResults = pgTable("criterion_results", {
   score: real("score").notNull().default(0),
   evidenceQuote: text("evidence_quote").notNull().default(""),
   evidenceStart: real("evidence_start").notNull().default(0),
+  guidelineRef: text("guideline_ref").notNull().default(""),
 });
 
 export const memos = pgTable("memos", {
@@ -111,6 +105,39 @@ export const departments = pgTable("departments", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: uuid("org_id").notNull().references(() => orgs.id),
   name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const guidelines = pgTable("guidelines", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id").notNull().references(() => orgs.id),
+  title: text("title").notNull(),
+  status: text("status").notNull().default("draft"),
+  currentVersion: integer("current_version").notNull().default(1),
+  mandatorySections: jsonb("mandatory_sections").$type<string[]>().notNull().default([]),
+  createdBy: text("created_by").notNull().default(""),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const guidelineVersions = pgTable("guideline_versions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  guidelineId: uuid("guideline_id").notNull().references(() => guidelines.id),
+  version: integer("version").notNull(),
+  markdown: text("markdown").notNull(),
+  contentHash: text("content_hash").notNull(),
+  sections: jsonb("sections").$type<{ id: string; path: string; level: number; title: string }[]>().notNull().default([]),
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const criteriaSets = pgTable("criteria_sets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id").notNull().references(() => orgs.id),
+  version: integer("version").notNull(),
+  status: text("status").notNull().default("draft"),
+  criteria: jsonb("criteria").$type<{ id: string; name: string; description: string; weight: number; mustPass?: boolean; guidance: string; guidelineRefs?: string[] }[]>().notNull(),
+  guidelineRefs: jsonb("guideline_refs").$type<Record<string, number>>().notNull().default({}),
+  stale: boolean("stale").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

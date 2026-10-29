@@ -92,7 +92,7 @@ export function Login() {
 
 export function Walkthrough({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
-  const steps = ["Upload or paste the QA policy (Scorecard page)", "Add the first employee (dashboard)", "Copy the session key shown once at creation", "Install the desktop agent (agent/README) and paste the key", "See the first call appear on the employee profile"];
+  const steps = ["Add the company guidelines (Guidelines page): upload Markdown, write your own, or use the starter template — then Activate", "Add the first employee (Employees page)", "Copy the session key from the wizard (keys are persistent and revealable)", "Install the desktop agent (agent/README) and paste the key", "See the first call appear on the employee profile"];
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4">
       <div className="card w-full max-w-lg p-6">

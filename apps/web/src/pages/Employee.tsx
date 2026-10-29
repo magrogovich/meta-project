@@ -71,7 +71,7 @@ function AgentKey({ employeeId, isAdmin }: { employeeId: string; isAdmin: boolea
   );
 }
 
-function CoachDialog({ employeeId, employeeName, onClose }: { employeeId: string; employeeName: string; onClose: () => void }) {
+export function CoachDialog({ employeeId, employeeName, onClose }: { employeeId: string; employeeName: string; onClose: () => void }) {
   const [, nav] = useLocation();
   const [topics, setTopics] = useState("");
   const [memoId, setMemoId] = useState("");
@@ -368,7 +368,7 @@ export function CallDetail() {
           <span className="text-sm font-bold text-gray-900">Call {id.slice(0, 8)}</span>
           <Pill tone={c.status === "done" ? "green" : c.status === "failed" ? "red" : "amber"}>{c.status}</Pill>
           <Pill tone={scoreTone(c.score)}>{c.score}</Pill>
-          <span className="text-xs text-gray-500">{c.language} · scorecard v{c.scorecardVersion}</span>
+          <span className="text-xs text-gray-500">{c.language} · criteria v{c.criteriaVersion ?? 1}{c.guidelineRefs && Object.keys(c.guidelineRefs).length ? ` · guidelines ${Object.values(c.guidelineRefs).join(",")}` : ""}</span>
           <button className="btn-outline ml-auto" onClick={async () => { await api(`/api/calls/${id}/rerun`, { method: "POST" }); setTimeout(() => refetch(), 2500); }}>Re-run analysis</button>
         </div>
         <audio ref={audioRef} controls className="mt-3 w-full" src={`${API}/api/calls/audio/${c.audioFile}`} />
@@ -394,7 +394,8 @@ export function CallDetail() {
               <div key={r.id} className="border-b border-gray-100 py-2.5 text-xs last:border-0">
                 <div className="flex items-center gap-2"><span className="font-semibold text-gray-900">{r.criterionName}</span>
                   <Pill tone={r.result === "pass" ? "green" : r.result === "partial" ? "amber" : "red"}>{r.result} {r.score}</Pill></div>
-                <button className="mt-1 text-left text-indigo-700 hover:underline" onClick={() => seek(r.evidenceStart)}>“{r.evidenceQuote}” @{r.evidenceStart?.toFixed?.(1)}s</button>
+                <button className="mt-1 block text-left text-indigo-700 hover:underline" onClick={() => seek(r.evidenceStart)}>“{r.evidenceQuote}” @{r.evidenceStart?.toFixed?.(1)}s</button>
+                {r.guidelineRef && <Link className="mt-0.5 inline-block text-[11px] text-gray-500 hover:text-indigo-700 hover:underline" href={`/guidelines/${r.guidelineRef.split(":")[0]}?section=${encodeURIComponent(r.guidelineRef)}`}>judged against § {r.guidelineRef.split(":").pop()}</Link>}
               </div>))}
             {!c.results?.length && <p className="text-xs text-gray-500">Analysis pending… status: {c.status}</p>}
           </div>

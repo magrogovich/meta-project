@@ -35,7 +35,10 @@ export function Login() {
         client_id: googleId,
         callback: (resp: any) => go(() => api("/api/auth/google", { method: "POST", body: JSON.stringify({ credential: resp.credential }) })),
       });
-      g.accounts.id.renderButton(document.getElementById("gis-btn"), { theme: "outline", size: "large", width: 320, text: "continue_with" });
+      const el = document.getElementById("gis-btn");
+      if (!el) return;
+      const w = Math.max(200, Math.min(400, Math.floor(el.clientWidth || 320)));
+      g.accounts.id.renderButton(el, { theme: "outline", size: "large", width: w, text: "continue_with", shape: "rectangular", logo_alignment: "left" });
     };
     if ((window as any).google?.accounts?.id) { renderBtn(); return; }
     const s = document.createElement("script");
@@ -75,7 +78,7 @@ export function Login() {
           {busy ? "Please wait…" : mode === "login" ? "Log in" : "Sign up (creates Organization)"}
         </button>
         {googleId ? (
-          <div className="mt-2 flex justify-center"><div id="gis-btn" /></div>
+          <div className="gis-wrap mt-2 w-full"><div id="gis-btn" className="w-full" /></div>
         ) : (
           <button className="btn-outline mt-2 w-full disabled:opacity-60" disabled={busy} onClick={() => go(() => api("/api/auth/google", { method: "POST", body: JSON.stringify({ email, name: email.split("@")[0] }) }))}>
             <GoogleLogo /> Continue with Google

@@ -1,1 +1,17 @@
-{"name":"arocall-calls","private":true,"version":"0.1.0","type":"module","scripts":{"dev:api":"pnpm --filter @arocall/api dev","dev:web":"pnpm --filter @arocall/web dev","build":"pnpm -r build","seed":"pnpm --filter @arocall/api seed"},"packageManager":"pnpm@9.0.0"}
+{
+  "name": "arocall-calls",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev:api": "pnpm --filter @arocall/api dev",
+    "dev:web": "pnpm --filter @arocall/web dev",
+    "build": "pnpm -r build",
+    "seed": "pnpm --filter @arocall/api seed",
+    "dev": "concurrently -n api,web -c blue,green \"pnpm --filter @arocall/api dev\" \"pnpm --filter @arocall/web dev\""
+  },
+  "packageManager": "pnpm@9.0.0",
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}

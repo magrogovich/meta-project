@@ -41,7 +41,7 @@ function Sidebar({ onNav }: { onNav: () => void }) {
     <aside className="relative z-10 flex h-full w-52 flex-shrink-0 flex-col border-e border-gray-200 bg-white">
       <div className="flex h-14 items-center px-4">
         <Link href="/" onClick={onNav} className="flex min-w-0 cursor-pointer items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-900 text-sm font-bold text-white">A</div>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg"><img src="/icon.png" alt="Arocall" className="h-8 w-8 object-cover" /></div>
           <span className="truncate text-sm font-bold tracking-tight text-gray-900">Arocall</span>
         </Link>
       </div>

@@ -61,7 +61,7 @@ export function Login() {
     <div className="font-sans-dashboard grid min-h-[100dvh] place-items-center bg-gray-50 p-6 text-[13px]">
       <div className="card w-full max-w-md p-8">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-900 text-sm font-bold text-white">A</div>
+          <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg"><img src="/icon.png" alt="Arocall" className="h-9 w-9 object-cover" /></div>
           <h1 className="text-lg font-bold tracking-tight text-gray-900">Arocall</h1>
         </div>
         <p className="mt-1 text-xs text-gray-500">AI QA for 100% of calls. AI assists, humans decide — no automated disciplinary actions.</p>

@@ -37,7 +37,7 @@ export function Coach() {
       <p className="text-xs text-gray-500">English only for now. AI coach, recorded &amp; summarized. Safety: the coach never makes employment decisions.</p>
       <Card className="p-4">
         <div className="mb-3 flex items-center gap-2">
-          <div className="grid h-10 w-10 animate-pulse place-items-center rounded-full bg-gray-900 font-bold text-white">A</div>
+          <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full"><img src="/icon.png" alt="Aro" className="h-10 w-10 animate-pulse object-cover" /></div>
           <span className="text-xs text-gray-500">Aro is {listening ? "listening…" : "here"}</span>
         </div>
         <div className="max-h-80 space-y-2 overflow-y-auto">

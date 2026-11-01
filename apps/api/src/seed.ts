@@ -11,39 +11,81 @@ import bcrypt from "bcryptjs";
 
 await ensureSchema();
 
-const FIRST = ["Amara", "Jonas", "Sofia", "Liam", "Priya"];
-const LAST = ["Diallo", "Weber", "Marsh", "Okafor", "Nair"];
-const DEPTS = ["Support", "Billing", "Retention", "Sales"];
-const LANGS = ["en", "fr", "de", "es"];
-
-const AGENT_GOOD = [
-  "Hello, thank you for calling Arocall, my name is {n}, how can I help you today?",
-  "I understand how frustrating this is, I hear you, and I am sorry for the trouble.",
-  "Let me verify your account and confirm the details so we follow policy.",
-  "I will fix this by tomorrow and send a confirmation email with the next steps.",
-  "To summarize, we resolved the billing error. Is there anything else? Thank you so much, goodbye!",
+type Persona = "improver" | "decliner" | "strong" | "weak-empathy" | "average";
+const PEOPLE: { first: string; last: string; dept: string; langs: string[]; persona: Persona }[] = [
+  { first: "Amara", last: "Diallo", dept: "Support", langs: ["en", "fr"], persona: "improver" },
+  { first: "Jonas", last: "Weber", dept: "Support", langs: ["en", "de"], persona: "decliner" },
+  { first: "Sofia", last: "Marsh", dept: "Billing", langs: ["en", "es"], persona: "strong" },
+  { first: "Liam", last: "Okafor", dept: "Billing", langs: ["en", "fr"], persona: "weak-empathy" },
+  { first: "Priya", last: "Nair", dept: "Support", langs: ["en", "es"], persona: "average" },
 ];
-const AGENT_BAD = [
-  "Yeah, what do you want?",
-  "That is not my problem, calm down.",
-  "I guarantee you will get triple refund, no need to verify anything.",
-  "I do not know, maybe call back later.",
-  "Bye.",
-];
-const CUST = ["Hi, my bill looks wrong this month.", "I have been waiting for a week!", "Can you just fix it please?", "What are the next steps?", "Okay, thanks for your help."];
 
-function transcript(quality: number, lang: string, name: string) {
-  const good = quality > 0.55;
+const CUST_OPEN = [
+  "Hi, my bill looks wrong this month, I'm really frustrated.",
+  "Hello, I've been waiting a week and I'm furious about this charge.",
+  "Hi, I need help with my account, it's quite urgent.",
+];
+const CUST_MID = ["Can you just fix it please?", "What are the next steps?", "I need this sorted today."];
+const CUST_HAPPY = ["Thanks, that's perfect, I appreciate it!", "Great, thank you so much for resolving this!"];
+const CUST_ANGRY = [
+  "This is terrible, get me your supervisor right now!",
+  "No, that's not good enough. I want to speak to your manager!",
+];
+const CUST_FLAT = ["Okay, I see.", "Alright, noted."];
+
+function agentLines(good: boolean, weakEmpathy: boolean, complianceFail: boolean, name: string, lang: string) {
+  const greetOk = lang === "fr" ? "Bonjour, merci d'avoir appelé Arocall, je m'appelle " + name
+    : lang === "de" ? "Guten Tag, danke für Ihren Anruf bei Arocall, mein Name ist " + name
+    : lang === "es" ? "Hola, gracias por llamar a Arocall, me llamo " + name
+    : `Hello, thank you for calling Arocall, my name is ${name}, how can I help you today?`;
+  const greet = good || Math.random() > 0.2 ? greetOk : "Yeah, what do you want?";
+  const empathy = weakEmpathy || !good
+    ? ["That is not my problem, calm down.", "Whatever, let's move on."][Math.floor(Math.random() * 2)]
+    : "I understand how frustrating this is, I hear you, and I am sorry for the trouble.";
+  const compliance = complianceFail
+    ? "I guarantee you will get a triple refund, no need to verify anything."
+    : "Let me verify your account and confirm the details so we follow policy.";
+  const resolution = good
+    ? "I will fix this by tomorrow and send a confirmation email with the next steps."
+    : "I don't know, maybe call back later.";
+  const close = good
+    ? "To summarize, we resolved the billing error. Is there anything else? Thank you so much, goodbye!"
+    : "Bye.";
+  return [greet, empathy, compliance, resolution, close];
+}
+
+// quality 0..1 controls good vs bad + sentiment trajectory
+function buildTranscript(opts: { quality: number; lang: string; name: string; weakEmpathy: boolean; complianceFail: boolean; supervisor: boolean; dayIdx: number }) {
+  const { quality, lang, name, weakEmpathy, complianceFail, supervisor, dayIdx } = opts;
+  const good = quality > 0.5;
+  const [g, em, co, re, cl] = agentLines(good, weakEmpathy, complianceFail, name, lang);
   const lines: any[] = [];
   let t = 0;
-  const poolLines = good ? AGENT_GOOD : AGENT_BAD;
-  const greet = lang === "fr" ? "Bonjour, merci d'avoir appelé Arocall" : lang === "de" ? "Guten Tag, danke für Ihren Anruf bei Arocall" : lang === "es" ? "Hola, gracias por llamar a Arocall" : poolLines[0].replace("{n}", name);
-  lines.push({ speaker: "Agent", text: greet, start: t, end: t + 4 }); t += 5;
-  for (let i = 0; i < 4; i++) {
-    lines.push({ speaker: "Customer", text: CUST[i % CUST.length], start: t, end: t + 3 }); t += 4;
-    lines.push({ speaker: "Agent", text: poolLines[(i + 1) % poolLines.length].replace("{n}", name), start: t, end: t + 4 }); t += 5;
+  const push = (speaker: string, text: string, dur: number, gap = 1) => {
+    lines.push({ speaker, text, start: Math.round(t * 10) / 10, end: Math.round((t + dur) * 10) / 10 });
+    t += dur + gap;
+  };
+  push("Agent", g, 4);
+  push("Customer", CUST_OPEN[dayIdx % CUST_OPEN.length], 3);
+  push("Agent", em, 4, weakEmpathy ? 0.2 : 1); // weak-empathy agents interrupt (short gap)
+  push("Customer", CUST_MID[dayIdx % CUST_MID.length], 3, good ? 2.5 : 1); // dead-air gap on good calls
+  push("Agent", co, 4);
+  push("Customer", supervisor ? CUST_ANGRY[dayIdx % CUST_ANGRY.length] : CUST_MID[(dayIdx + 1) % CUST_MID.length], 3);
+  // interruption: agent overlaps customer on bad calls
+  if (!good && dayIdx % 3 === 0) {
+    const overlapStart = Math.round((t - 1.2) * 10) / 10;
+    lines.push({ speaker: "Agent", text: re, start: overlapStart, end: overlapStart + 4 });
+    t += 4 + 1;
+  } else {
+    push("Agent", re, 4);
   }
-  return { lines, dur: t };
+  const endText = supervisor ? CUST_ANGRY[(dayIdx + 1) % CUST_ANGRY.length]
+    : good ? CUST_HAPPY[dayIdx % CUST_HAPPY.length]
+    : quality < 0.35 ? CUST_ANGRY[dayIdx % CUST_ANGRY.length] : CUST_FLAT[dayIdx % CUST_FLAT.length];
+  push("Customer", endText, 3);
+  push("Agent", cl, 4, 3); // trailing silence -> dead air
+  const dur = Math.round(t);
+  return { lines, dur };
 }
 
 const email = process.env.SEED_EMAIL || "demo@arocall.ai";
@@ -58,7 +100,15 @@ if (!users.length) {
   console.log(`created login ${email} / ${pass}`);
 } else { orgId = users[0].orgId; console.log(`using login ${email} / ${pass}`); }
 
-// Sample guidelines document + approved criteria set (Guidelines system)
+// quality targets
+await db.update(s.orgs).set({
+  settings: {
+    quality: { qaTarget: 80, passThreshold: 70, scoreBelow: 70, dropPoints: 10, criticalCount: 2 },
+    coaching: { qaTarget: 80, passThreshold: 70, scoreBelow: 70, dropPoints: 10, criticalCount: 2 },
+  },
+}).where(eq(s.orgs.id, orgId));
+
+// guidelines + approved criteria
 {
   const { readFileSync, existsSync } = await import("fs");
   const { join, dirname } = await import("path");
@@ -81,7 +131,6 @@ if (!users.length) {
 }
 
 const existing = await db.select().from(s.employees).where(eq(s.employees.orgId, orgId));
-// FK order: coaching sessions -> memos -> action items -> audit -> criterion results -> calls -> employees
 await db.delete(s.coachingSessions).where(eq(s.coachingSessions.orgId, orgId));
 await db.delete(s.memos).where(eq(s.memos.orgId, orgId));
 await db.delete(s.actionItems).where(eq(s.actionItems.orgId, orgId));
@@ -93,35 +142,84 @@ for (const e of existing) {
   await db.delete(s.employees).where(eq(s.employees.id, e.id));
 }
 
-// 5 employees: improver (idx0: 45->92), decliner (idx1: 90->48), others mid
-for (const d of DEPTS) {
+for (const d of ["Support", "Billing"]) {
   const rows = await db.select().from(s.departments).where(and(eq(s.departments.orgId, orgId), eq(s.departments.name, d)));
   if (!rows.length) await db.insert(s.departments).values({ orgId, name: d });
 }
-for (let i = 0; i < 5; i++) {
-  const name = `${FIRST[i]} ${LAST[i]}`;
+
+const CALLS_PER = 12;
+let complianceFails = 0, supervisorCount = 0;
+const empRows: any[] = [];
+for (let i = 0; i < PEOPLE.length; i++) {
+  const p = PEOPLE[i];
+  const name = `${p.first} ${p.last}`;
   const key = newSessionKey();
-  const [e] = await db.insert(s.employees).values({ orgId, name, department: DEPTS[i % 4], languages: [LANGS[i % 4], "en"], startDate: "2025-01-15", sessionKeyHash: "", sessionKeyPrefix: key.slice(0, 8), sessionKeyEnc: encryptKey(key), sessionKeyHmac: keyTag(key), sessionKeyRevoked: false, status: "active" }).returning();
-  console.log(`employee ${name} key=${key}`);
-  for (let k = 0; k < 8; k++) {
+  const [e] = await db.insert(s.employees).values({
+    orgId, name, department: p.dept, languages: p.langs, startDate: "2025-01-15",
+    sessionKeyHash: "", sessionKeyPrefix: key.slice(0, 8),
+    sessionKeyEnc: encryptKey(key), sessionKeyHmac: keyTag(key),
+    sessionKeyRevoked: false, status: "active",
+  }).returning();
+  empRows.push(e);
+  console.log(`employee ${name} [${p.persona}] key=${key}`);
+  for (let k = 0; k < CALLS_PER; k++) {
+    // spread over last 60 days: k=0 oldest (59d ago), k=11 newest (1d ago)
+    const daysAgo = 59 - Math.round((k / (CALLS_PER - 1)) * 58);
     let q: number;
-    if (i === 0) q = 0.35 + (k / 7) * 0.6;       // improves
-    else if (i === 1) q = 0.9 - (k / 7) * 0.55;  // declines
-    else q = 0.55 + 0.2 * Math.sin(k + i);
-    const lang = (e.languages as string[])[k % 2];
-    const { lines, dur } = transcript(q, lang, FIRST[i]);
+    const prog = k / (CALLS_PER - 1);
+    if (p.persona === "improver") q = 0.3 + prog * 0.65;
+    else if (p.persona === "decliner") q = 0.92 - prog * 0.6;
+    else if (p.persona === "strong") q = 0.78 + 0.12 * Math.sin(k * 1.3);
+    else if (p.persona === "weak-empathy") q = 0.62 + 0.08 * Math.sin(k + 1);
+    else q = 0.6 + 0.15 * Math.sin(k * 0.9 + 2);
+    q = Math.min(0.95, Math.max(0.15, q));
+    // force at least 3 compliance failures total: decliner k=8, weak-empathy k=9, average k=7
+    const forceCompliance = (i === 1 && k === 8) || (i === 3 && k === 9) || (i === 4 && k === 7);
+    const complianceFail = forceCompliance || (q < 0.3 && k % 4 === 0);
+    if (complianceFail) complianceFails++;
+    const supervisor = forceCompliance || (i === 0 && k === 0) || (i === 1 && (k === 9 || k === 10)) || (i === 4 && k === 8) ||
+      (!forceCompliance && q < 0.35 && k % 3 === 1 && supervisorCount < 4);
+    if (supervisor) supervisorCount++;
+    const lang = p.langs[k % p.langs.length];
+    const { lines, dur } = buildTranscript({
+      quality: q, lang, name: p.first,
+      weakEmpathy: p.persona === "weak-empathy",
+      complianceFail, supervisor, dayIdx: k,
+    });
     const file = saveAudio(synthWav(dur, i + 2), `seed_${i}_${k}.wav`);
-    const started = new Date(Date.now() - (8 - k) * 3 * 864e5 - i * 36e5);
-    const [c] = await db.insert(s.calls).values({ orgId, employeeId: e.id, language: lang, audioFile: file, status: "uploaded", transcript: lines, durationSec: dur, startedAt: started }).returning();
+    const started = new Date(Date.now() - daysAgo * 864e5 - (k % 5) * 36e5);
+    const [c] = await db.insert(s.calls).values({
+      orgId, employeeId: e.id, language: lang, audioFile: file,
+      status: "uploaded", transcript: lines, durationSec: dur, startedAt: started,
+    }).returning();
     await processCall(c.id);
   }
 }
-console.log("seed done: 5 employees x 8 calls = 40");
-const allEmps = await db.select().from(s.employees).where(eq(s.employees.orgId, orgId));
-for (let i = 0; i < allEmps.length; i++) {
+// 2 failed-processing calls (extra, recent)
+for (let j = 0; j < 2; j++) {
+  const e = empRows[j % empRows.length];
+  const file = saveAudio(synthWav(30, 9), `seed_failed_${j}.wav`);
+  await db.insert(s.calls).values({
+    orgId, employeeId: e.id, language: "en", audioFile: file,
+    status: "failed", transcript: [], durationSec: 30, startedAt: new Date(Date.now() - (2 + j) * 864e5),
+  });
+}
+// agent presence: Amara online now, Jonas offline (stale), rest never/online mix
+await db.update(s.employees).set({ lastSeen: new Date(), agentStatus: "online", agentVersion: "1.4.0" }).where(eq(s.employees.id, empRows[0].id));
+await db.update(s.employees).set({ lastSeen: new Date(Date.now() - 6 * 36e5), agentStatus: "offline", agentVersion: "1.4.0" }).where(eq(s.employees.id, empRows[1].id));
+await db.update(s.employees).set({ lastSeen: new Date(), agentStatus: "online", agentVersion: "1.4.0" }).where(eq(s.employees.id, empRows[2].id));
+// human-flagged coaching session for the decliner
+await db.insert(s.coachingSessions).values({
+  orgId, employeeId: empRows[1].id, topics: "Compliance drift + empathy",
+  transcript: [{ role: "employee", text: "I feel the targets are unfair.", at: new Date().toISOString() }],
+  summary: "Employee raised fairness concerns.", actionItems: ["Review verification script"],
+  humanFlag: true, token: "cs_seedflag1",
+});
+console.log(`seed done: 5 employees x ${CALLS_PER} calls = ${5 * CALLS_PER} + 2 failed; complianceFails=${complianceFails}, supervisor=${supervisorCount}`);
+for (let i = 0; i < empRows.length; i++) {
   await db.insert(s.actionItems).values([
-    { orgId, employeeId: allEmps[i].id, text: "Use the empathy opener on every call", status: i % 2 ? "done" : "open", source: "coach" },
-    { orgId, employeeId: allEmps[i].id, text: "Apply the 3-step close", status: i % 3 === 0 ? "done" : "open", source: "memo" },
+    { orgId, employeeId: empRows[i].id, text: "Use the empathy opener on every call", status: i % 2 ? "done" : "open", source: "coach" },
+    { orgId, employeeId: empRows[i].id, text: "Apply the 3-step close", status: i % 3 === 0 ? "done" : "open", source: "memo" },
   ]);
 }
 await pool.end();

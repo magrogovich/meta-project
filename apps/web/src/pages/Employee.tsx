@@ -1,14 +1,43 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, API } from "../lib/api";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useRoute, useLocation } from "wouter";
 import { useAuth } from "../lib/auth";
-import { ArrowLeft, Mic, MoreHorizontal, Eye, EyeOff, Copy, Check, KeyRound, Ban, FileText, Plus, Trash2, Pencil } from "lucide-react";
-import { Card, CardHeader, Pill, scoreTone, EmptyState } from "../components/ui";
-import { LineChart, BarChart } from "../components/charts";
+import { ArrowLeft, Mic, MoreHorizontal, Eye, EyeOff, Copy, Check, KeyRound, Ban, FileText, Plus, Trash2, Pencil, Play, Pause } from "lucide-react";
+import { Card, CardHeader, Pill, scoreTone, EmptyState, DateField } from "../components/ui";
+import { LineChart, HBars } from "../components/charts";
 
 const TABS = ["Overview", "Calls", "Coaching", "Agent"] as const;
 
+// ---------- custom audio player (platform-styled) ----------
+function AudioPlayer({ src, audioRef }: { src: string; audioRef: React.RefObject<HTMLAudioElement | null> }) {
+  const [playing, setPlaying] = useState(false);
+  const [t, setT] = useState(0);
+  const [dur, setDur] = useState(0);
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  return (
+    <div className="mt-3 flex items-center gap-3 rounded-lg bg-gray-900 px-3 py-2.5 text-white">
+      <audio ref={audioRef} src={src} preload="metadata"
+        onTimeUpdate={(e) => setT(e.currentTarget.currentTime)}
+        onLoadedMetadata={(e) => setDur(e.currentTarget.duration)}
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)} className="hidden" />
+      <button
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-gray-900 hover:bg-gray-200"
+        onClick={() => { const a = audioRef.current; if (!a) return; if (a.paused) a.play(); else a.pause(); }}
+        aria-label={playing ? "Pause" : "Play"}>
+        {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
+      </button>
+      <span className="shrink-0 text-xs tabular-nums text-gray-300">{fmt(t)}</span>
+      <input type="range" min={0} max={dur || 0} step={0.1} value={Math.min(t, dur || 0)} aria-label="Seek"
+        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-gray-700 accent-teal-400"
+        onChange={(e) => { const a = audioRef.current; if (!a) return; a.currentTime = Number(e.target.value); setT(a.currentTime); }} />
+      <span className="shrink-0 text-xs tabular-nums text-gray-300">{fmt(dur)}</span>
+    </div>
+  );
+}
+
+// ---------- session key panel ----------
 function AgentKey({ employeeId, isAdmin }: { employeeId: string; isAdmin: boolean }) {
   const [key, setKey] = useState<string | null>(null);
   const [err, setErr] = useState("");
@@ -71,6 +100,7 @@ function AgentKey({ employeeId, isAdmin }: { employeeId: string; isAdmin: boolea
   );
 }
 
+// ---------- start-coaching dialog ----------
 export function CoachDialog({ employeeId, employeeName, onClose }: { employeeId: string; employeeName: string; onClose: () => void }) {
   const [, nav] = useLocation();
   const [topics, setTopics] = useState("");
@@ -99,6 +129,47 @@ export function CoachDialog({ employeeId, employeeName, onClose }: { employeeId:
   );
 }
 
+// ---------- edit employee dialog ----------
+function EditDialog({ employee, onClose }: { employee: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const { data: depts } = useQuery({ queryKey: ["depts"], queryFn: () => api("/api/departments") });
+  const [form, setForm] = useState({
+    name: employee.name, department: employee.department,
+    languages: (employee.languages || []).join(", "), status: employee.status || "active",
+  });
+  const save = useMutation({
+    mutationFn: () => api(`/api/employees/${employee.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ ...form, languages: form.languages.split(",").map((s: string) => s.trim()).filter(Boolean) }),
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["profile"] }); qc.invalidateQueries({ queryKey: ["emp-table"] }); qc.invalidateQueries({ queryKey: ["emps"] }); onClose(); },
+  });
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4">
+      <div className="card w-full max-w-md p-5">
+        <h2 className="text-sm font-bold text-gray-900">Edit employee</h2>
+        <label className="mt-3 block text-[11px] font-semibold text-gray-500">Name</label>
+        <input className="input mt-1" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <label className="mt-2 block text-[11px] font-semibold text-gray-500">Department</label>
+        <select className="input mt-1" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}>
+          {[...new Set([...((depts as any[]) || []).map((d) => d.name), form.department])].map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <label className="mt-2 block text-[11px] font-semibold text-gray-500">Languages (comma separated)</label>
+        <input className="input mt-1" value={form.languages} onChange={(e) => setForm({ ...form, languages: e.target.value })} />
+        <label className="mt-2 block text-[11px] font-semibold text-gray-500">Status</label>
+        <select className="input mt-1" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+          <option value="active">active</option><option value="inactive">inactive</option>
+        </select>
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="btn-outline" onClick={onClose}>Cancel</button>
+          <button className="btn" disabled={!form.name.trim()} onClick={() => save.mutate()}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- coaching tab ----------
 function CoachingTab({ employeeId }: { employeeId: string }) {
   const qc = useQueryClient();
   const inv = () => { qc.invalidateQueries({ queryKey: ["memos"] }); qc.invalidateQueries({ queryKey: ["sessions"] }); qc.invalidateQueries({ queryKey: ["actions"] }); };
@@ -206,6 +277,7 @@ function CoachingTab({ employeeId }: { employeeId: string }) {
   );
 }
 
+// ---------- profile ----------
 export function EmployeeProfile() {
   const [, params] = useRoute("/employees/:id");
   const id = params?.id || "";
@@ -214,6 +286,7 @@ export function EmployeeProfile() {
   const [f, setF] = useState({ from: "", to: "", lang: "", min: "", max: "" });
   const [more, setMore] = useState(false);
   const [coachOpen, setCoachOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const { role } = useAuth();
   const isAdmin = role !== "evaluator";
   const q = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
@@ -226,6 +299,8 @@ export function EmployeeProfile() {
   if (isLoading) return <p className="p-4 text-xs text-gray-500">Loading…</p>;
   if (!data) return <p className="p-4 text-xs">Not found</p>;
   const e = data.employee;
+  const callCount = data.calls.length;
+  const rangeHint = callCount ? `from ${data.calls.length} analyzed call(s)` : "no analyzed calls";
   return (
     <div className="w-full space-y-4">
       <Link href="/employees" className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900"><ArrowLeft className="h-3.5 w-3.5" /> Employees</Link>
@@ -244,6 +319,7 @@ export function EmployeeProfile() {
             <button className="btn-outline" onClick={() => setMore((m) => !m)}><MoreHorizontal className="h-4 w-4" /> More</button>
             {more && (
               <div className="absolute end-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                <button className="block w-full px-3 py-2 text-left text-xs hover:bg-gray-50" onClick={() => { setMore(false); setEditOpen(true); }}><span className="inline-flex items-center gap-1.5"><Pencil className="h-3 w-3" /> Edit details</span></button>
                 <button className="block w-full px-3 py-2 text-left text-xs hover:bg-gray-50" onClick={() => { setMore(false); setTab("Coaching"); }}>Generate memo</button>
                 <button className="block w-full px-3 py-2 text-left text-xs hover:bg-gray-50" onClick={() => { setMore(false); setTab("Agent"); }}>Manage session key</button>
                 <button className="block w-full px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50" onClick={() => { if (confirm(`Delete ${e.name} and all their data?`)) delEmp.mutate(); }}>Delete employee</button>
@@ -259,34 +335,34 @@ export function EmployeeProfile() {
       </Card>
 
       {tab === "Overview" && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader title="Score trend" sub="over time" />
-            <div className="p-4"><LineChart points={data.trend} /></div>
+        <div className="grid gap-4 lg:grid-cols-5">
+          <Card className="lg:col-span-3">
+            <CardHeader title="Score trend" sub={`${rangeHint} — hover a point, click to open the call`} />
+            <div className="p-4"><LineChart
+              points={data.trend}
+              hint={(p) => `${new Date(p.t).toLocaleString()} — score ${p.score} (click to open call)`}
+              onPointClick={(p) => p.id && nav(`/calls/${p.id}`)} /></div>
           </Card>
-          <Card>
-            <CardHeader title="Strengths & weaknesses" sub="AI-generated from criterion averages" />
-            <div className="space-y-1 p-4 text-xs">
-              <p><span className="font-semibold text-emerald-700">Strengths: </span><span className="text-gray-600">{data.strengths?.join("; ") || "—"}</span></p>
-              <p><span className="font-semibold text-red-600">Weaknesses: </span><span className="text-gray-600">{data.weaknesses?.join("; ") || "—"}</span></p>
-            </div>
-          </Card>
-          <Card className="md:col-span-2">
-            <CardHeader title="Criteria breakdown" sub="average per criterion" />
-            <div className="p-4"><BarChart bars={(data.breakdown || []).map((b: any) => ({ label: b.name.split(" ")[0], value: b.avg }))} /></div>
+          <Card className="lg:col-span-2">
+            <CardHeader title="Criteria breakdown" sub={`average per criterion, ${rangeHint}`} />
+            <div className="p-4"><HBars bars={(data.breakdown || []).map((b: any) => ({
+              label: b.name, value: b.avg,
+              hint: `${b.name}: avg ${b.avg} across ${b.count} call(s)`,
+            }))} /></div>
           </Card>
         </div>
       )}
 
       {tab === "Calls" && (
         <Card>
-          <CardHeader title="Calls" sub={`${data.calls.length} in filter`} />
-          <div className="flex flex-wrap gap-2 border-b border-gray-100 p-3">
-            <input className="input w-36" type="date" value={f.from} onChange={(ev) => setF({ ...f, from: ev.target.value })} />
-            <input className="input w-36" type="date" value={f.to} onChange={(ev) => setF({ ...f, to: ev.target.value })} />
-            <select className="input w-28" value={f.lang} onChange={(ev) => setF({ ...f, lang: ev.target.value })}><option value="">all lang</option><option>en</option><option>fr</option><option>de</option><option>es</option></select>
-            <input className="input w-24" type="number" placeholder="min" value={f.min} onChange={(ev) => setF({ ...f, min: ev.target.value })} />
-            <input className="input w-24" type="number" placeholder="max" value={f.max} onChange={(ev) => setF({ ...f, max: ev.target.value })} />
+          <CardHeader title="Calls" sub={`${data.calls.length} in filter — click a row to open`} />
+          <div className="flex flex-wrap items-end gap-2 border-b border-gray-100 p-3">
+            <div><label className="text-[11px] font-semibold text-gray-500">From</label><DateField value={f.from} onChange={(v) => setF({ ...f, from: v })} /></div>
+            <div><label className="text-[11px] font-semibold text-gray-500">To</label><DateField value={f.to} onChange={(v) => setF({ ...f, to: v })} /></div>
+            <div><label className="text-[11px] font-semibold text-gray-500">Language</label>
+              <select className="input mt-1 w-28" value={f.lang} onChange={(ev) => setF({ ...f, lang: ev.target.value })}><option value="">all</option><option>en</option><option>fr</option><option>de</option><option>es</option></select></div>
+            <div><label className="text-[11px] font-semibold text-gray-500">Min score</label><input className="input mt-1 w-24" type="number" placeholder="—" value={f.min} onChange={(ev) => setF({ ...f, min: ev.target.value })} /></div>
+            <div><label className="text-[11px] font-semibold text-gray-500">Max score</label><input className="input mt-1 w-24" type="number" placeholder="—" value={f.max} onChange={(ev) => setF({ ...f, max: ev.target.value })} /></div>
           </div>
           {!data.calls.length ? <p className="p-4 text-xs text-gray-400">No calls in this filter.</p> : (
             <div className="overflow-x-auto">
@@ -298,8 +374,8 @@ export function EmployeeProfile() {
                 </tr></thead>
                 <tbody className="divide-y divide-gray-100">
                   {data.calls.map((c: any) => (
-                    <tr key={c.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2.5 font-medium text-gray-900"><Link className="hover:underline" href={`/calls/${c.id}`}>{new Date(c.startedAt).toLocaleString()}</Link></td>
+                    <tr key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => nav(`/calls/${c.id}`)}>
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{new Date(c.startedAt).toLocaleString()}</td>
                       <td className="px-2 py-2.5 text-gray-500">{c.durationSec}s</td>
                       <td className="px-2 py-2.5 text-gray-500">{c.language}</td>
                       <td className="px-2 py-2.5"><Pill tone={c.status === "done" ? "green" : c.status === "failed" ? "red" : "amber"}>{c.status}</Pill></td>
@@ -332,6 +408,7 @@ export function EmployeeProfile() {
       )}
 
       {coachOpen && <CoachDialog employeeId={id} employeeName={e.name} onClose={() => setCoachOpen(false)} />}
+      {editOpen && <EditDialog employee={e} onClose={() => setEditOpen(false)} />}
     </div>
   );
 }
@@ -356,25 +433,54 @@ export function MemoCard({ memo }: { memo: any }) {
 export function CallDetail() {
   const [, params] = useRoute("/calls/:id");
   const id = params?.id || "";
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const seekRef = useRef<HTMLAudioElement>(null);
+  const [rerunning, setRerunning] = useState(false);
   const { data: c, isLoading, refetch } = useQuery({ queryKey: ["call", id], queryFn: () => api(`/api/calls/${id}`), refetchInterval: (q: any) => (["uploaded", "transcribing", "analyzing"].includes(q?.state?.data?.status) ? 2000 : false) });
+  useEffect(() => {
+    if (c && !["uploaded", "transcribing", "analyzing"].includes(c.status)) setRerunning(false);
+  }, [c?.status]);
   if (isLoading) return <p className="p-4 text-xs text-gray-500">Loading…</p>;
-  const seek = (s: number) => { if (audioRef.current) { audioRef.current.currentTime = s; audioRef.current.play(); } };
+  const seek = (s: number) => { const a = seekRef.current; if (a) { a.currentTime = s; a.play(); } };
+  const rerun = async () => {
+    if (rerunning) return;
+    setRerunning(true);
+    await api(`/api/calls/${id}/rerun`, { method: "POST" });
+    refetch();
+  };
   return (
     <div className="w-full space-y-4">
       <Link href={c ? `/employees/${c.employeeId}` : "/employees"} className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900"><ArrowLeft className="h-3.5 w-3.5" /> Back to employee</Link>
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-bold text-gray-900">Call {id.slice(0, 8)}</span>
-          <Pill tone={c.status === "done" ? "green" : c.status === "failed" ? "red" : "amber"}>{c.status}</Pill>
+          <Pill tone={c.status === "done" ? "green" : c.status === "failed" ? "red" : "amber"}>{rerunning ? "analyzing" : c.status}</Pill>
           <Pill tone={scoreTone(c.score)}>{c.score}</Pill>
           <span className="text-xs text-gray-500">{c.language} · criteria v{c.criteriaVersion ?? 1}{c.guidelineRefs && Object.keys(c.guidelineRefs).length ? ` · guidelines ${Object.values(c.guidelineRefs).join(",")}` : ""}</span>
-          <button className="btn-outline ml-auto" onClick={async () => { await api(`/api/calls/${id}/rerun`, { method: "POST" }); setTimeout(() => refetch(), 2500); }}>Re-run analysis</button>
+          <button className="btn-outline ml-auto disabled:opacity-60" disabled={rerunning} onClick={rerun}>{rerunning ? "Analyzing…" : "Re-run analysis"}</button>
         </div>
-        <audio ref={audioRef} controls className="mt-3 w-full" src={`${API}/api/calls/audio/${c.audioFile}`} />
+        <AudioPlayer audioRef={seekRef} src={`${API}/api/calls/audio/${c.audioFile}`} />
         <p className="mt-2 text-xs text-gray-700">{c.summary}</p>
         <p className="mt-1 text-[11px] text-gray-500">Went well: {(c.wentWell || []).join(" · ") || "—"}</p>
         <p className="text-[11px] text-gray-500">Went wrong: {(c.wentWrong || []).join(" · ") || "—"} · Tags: {(c.tags || []).join(", ")}</p>
+        <div className="mt-2 grid gap-2 text-[11px] sm:grid-cols-2">
+          <div className="rounded-md bg-gray-50 p-2 ring-1 ring-gray-100">
+            <p className="font-semibold text-gray-700">Conversation outcomes <span className="font-normal text-gray-400">(AI estimate)</span></p>
+            <p className="mt-1 text-gray-600">Sentiment start: <b>{c.sentimentStart || "—"}</b>
+              {c.sentimentStartQuote && <button className="ml-1 text-indigo-700 hover:underline" onClick={() => seek(c.sentimentStartAt)}>“{c.sentimentStartQuote.slice(0, 60)}”</button>}</p>
+            <p className="text-gray-600">Sentiment end: <b>{c.sentimentEnd || "—"}</b>
+              {c.sentimentEndQuote && <button className="ml-1 text-indigo-700 hover:underline" onClick={() => seek(c.sentimentEndAt)}>“{c.sentimentEndQuote.slice(0, 60)}”</button>}</p>
+            <p className="text-gray-600">Resolved: <b>{c.issueResolved || "—"}</b>
+              {c.issueResolvedQuote && <button className="ml-1 text-indigo-700 hover:underline" onClick={() => seek(c.issueResolvedAt)}>“{c.issueResolvedQuote.slice(0, 60)}”</button>}</p>
+            <p className="text-gray-600">Supervisor requested: <b>{c.supervisorRequested ? "yes" : "no"}</b>
+              {!!c.supervisorQuote && <button className="ml-1 text-indigo-700 hover:underline" onClick={() => seek(c.supervisorAt)}>“{c.supervisorQuote.slice(0, 60)}”</button>}</p>
+          </div>
+          <div className="rounded-md bg-gray-50 p-2 ring-1 ring-gray-100">
+            <p className="font-semibold text-gray-700">Conversation metrics <span className="font-normal text-gray-400">(computed)</span></p>
+            <p className="mt-1 text-gray-600">Talk:listening {c.talkRatio ?? "—"}{c.talkRatio != null ? ":1" : ""} · Dead air {c.deadAirPct ?? "—"}{c.deadAirPct != null ? "%" : ""} · Interruptions {c.interruptions ?? "—"}</p>
+            <p className="text-gray-600">Handle {c.durationSec}s · Pace {c.agentWpm ?? "—"}{c.agentWpm != null ? " wpm" : ""}</p>
+            {(c.talkRatio == null) && <p className="text-gray-400">— until re-run analysis.</p>}
+          </div>
+        </div>
       </Card>
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
@@ -397,7 +503,7 @@ export function CallDetail() {
                 <button className="mt-1 block text-left text-indigo-700 hover:underline" onClick={() => seek(r.evidenceStart)}>“{r.evidenceQuote}” @{r.evidenceStart?.toFixed?.(1)}s</button>
                 {r.guidelineRef && <Link className="mt-0.5 inline-block text-[11px] text-gray-500 hover:text-indigo-700 hover:underline" href={`/guidelines/${r.guidelineRef.split(":")[0]}?section=${encodeURIComponent(r.guidelineRef)}`}>judged against § {r.guidelineRef.split(":").pop()}</Link>}
               </div>))}
-            {!c.results?.length && <p className="text-xs text-gray-500">Analysis pending… status: {c.status}</p>}
+            {!c.results?.length && <p className="text-xs text-gray-500">Analysis pending… status: {rerunning ? "analyzing" : c.status}</p>}
           </div>
         </Card>
       </div>

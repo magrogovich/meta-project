@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, PhoneCall, Users, Mic, BookOpen, ChartBar, Settings as SettingsIcon, Bell, Menu, LogOut, CircleHelp } from "lucide-react";
+import { LayoutDashboard, PhoneCall, Users, Mic, BookOpen, Settings as SettingsIcon, Bell, Menu, LogOut, CircleHelp } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
@@ -11,7 +11,6 @@ const NAV = [
   { icon: Users, label: "Employees", path: "/employees" },
   { icon: Mic, label: "Coaching", path: "/coaching" },
   { icon: BookOpen, label: "Guidelines", path: "/guidelines" },
-  { icon: ChartBar, label: "Analytics", path: "/analytics" },
 ] as const;
 const NAV_BOTTOM = [
   { icon: SettingsIcon, label: "Settings", path: "/settings" },
@@ -26,7 +25,6 @@ function pageNameFor(path: string): string {
   if (p.startsWith("/employees")) return "Employees";
   if (p.startsWith("/coaching")) return "Coaching";
   if (p.startsWith("/guidelines")) return "Guidelines";
-  if (p.startsWith("/analytics")) return "Analytics";
   if (p.startsWith("/settings")) return "Settings";
   if (p.startsWith("/coach")) return "AI coaching";
   return "Workspace";

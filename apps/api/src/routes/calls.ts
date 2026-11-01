@@ -80,7 +80,19 @@ export async function processCall(callId: string) {
     for (const r of analysis.results) {
       await db.insert(s.criterionResults).values({ callId, criterionId: r.criterionId, criterionName: r.criterionName || r.criterionId, result: r.result, score: r.score, evidenceQuote: r.evidenceQuote, evidenceStart: r.evidenceStart || 0, guidelineRef: r.guidelineRef || "" });
     }
-    await db.update(s.calls).set({ status: "done", score: analysis.total, summary: analysis.summary || "", wentWell: analysis.wentWell || [], wentWrong: analysis.wentWrong || [], tags: analysis.tags || [], criteriaVersion, guidelineRefs }).where(eq(s.calls.id, callId));
+    const { computeConversationMetrics } = await import("../lib/conversation.js");
+    const conv = computeConversationMetrics(transcript, call.durationSec || Math.max(1, Math.round(transcript.reduce((m: number, l: any) => Math.max(m, l.end || 0), 0))));
+    await db.update(s.calls).set({
+      status: "done", score: analysis.total, summary: analysis.summary || "",
+      wentWell: analysis.wentWell || [], wentWrong: analysis.wentWrong || [], tags: analysis.tags || [],
+      criteriaVersion, guidelineRefs,
+      sentimentStart: analysis.customerSentimentStart || "", sentimentEnd: analysis.customerSentimentEnd || "",
+      sentimentStartQuote: analysis.customerSentimentStartQuote || "", sentimentEndQuote: analysis.customerSentimentEndQuote || "",
+      sentimentStartAt: analysis.customerSentimentStartAt || 0, sentimentEndAt: analysis.customerSentimentEndAt || 0,
+      issueResolved: analysis.issueResolved || "", issueResolvedQuote: analysis.issueResolvedQuote || "", issueResolvedAt: analysis.issueResolvedAt || 0,
+      supervisorRequested: !!analysis.customerRequestedSupervisor, supervisorQuote: analysis.supervisorQuote || "", supervisorAt: analysis.supervisorAt || 0,
+      talkRatio: conv.talkRatio, deadAirPct: conv.deadAirPct, interruptions: conv.interruptions, agentWpm: conv.agentWpm,
+    }).where(eq(s.calls.id, callId));
   } catch (e: any) {
     await db.update(s.calls).set({ status: "failed" }).where(eq(s.calls.id, callId));
   }
@@ -95,7 +107,7 @@ callRouter.get("/audio/:file", async (req, res) => {
 });
 callRouter.use(authMw);
 callRouter.get("/search", async (req: any, res) => {
-  const { from, to, employeeId, dept, lang, min, max, critical, failed, page, limit, sort, order } = req.query as any;
+  const { from, to, employeeId, dept, lang, min, max, critical, failed, failCrit, page, limit, sort, order } = req.query as any;
   const orgId = req.user.orgId;
   let emps = await db.select().from(s.employees).where(eq(s.employees.orgId, orgId));
   if (dept) emps = emps.filter((e) => e.department === dept);
@@ -120,6 +132,8 @@ callRouter.get("/search", async (req: any, res) => {
   for (const r of crit) (critByCall[r.callId] = critByCall[r.callId] || []).push(r);
   const isCritical = (cid: string) => (critByCall[cid] || []).some((r) => r.result === "fail" && mustIds.has(r.criterionId));
   if (critical === "1" || critical === "true") rows = rows.filter((c) => c.status === "done" && isCritical(c.id));
+  if (failCrit) rows = rows.filter((c) => (critByCall[c.id] || []).some((r) => r.criterionId === failCrit && r.result === "fail"));
+  if (employeeId && failCrit) rows = rows.filter((c) => c.employeeId === employeeId);
   const withFlags = rows.map((c) => ({
     ...c,
     employeeName: empName[c.employeeId] || "—",
@@ -286,92 +300,8 @@ agentRouter.post("/upload-chunk", upload.single("chunk"), async (req, res) => { 
   res.json({ done: false, received: arr.filter(Boolean).length });
 });
 
-// ---- dashboard summary: "what needs my attention right now?" ----
+// ---- dashboard summary: replaced by routes/dashboard.ts (dedicated endpoints) ----
 export const dashRouter = Router();
-dashRouter.use(authMw);
-dashRouter.get("/summary", async (req: any, res) => {
-  const { from, to, dept, lang } = req.query as any;
-  const orgId = req.user.orgId;
-  let emps = await db.select().from(s.employees).where(eq(s.employees.orgId, orgId));
-  if (dept) emps = emps.filter((e) => e.department === dept);
-  const empIds = new Set(emps.map((e) => e.id));
-  let callRows = await db.select().from(s.calls).where(eq(s.calls.orgId, orgId));
-  callRows = callRows.filter((c) => empIds.has(c.employeeId));
-  if (from) callRows = callRows.filter((c) => new Date(c.startedAt || 0) >= new Date(from));
-  if (to) callRows = callRows.filter((c) => new Date(c.startedAt || 0) <= new Date(to));
-  if (lang) callRows = callRows.filter((c) => c.language === lang);
-  const mid = from && to ? (+new Date(from) + +new Date(to)) / 2 : 0;
-  const prev = mid ? callRows.filter((c) => +new Date(c.startedAt || 0) < mid) : [];
-  const cur = mid ? callRows.filter((c) => +new Date(c.startedAt || 0) >= mid) : callRows;
-  const done = callRows.filter((c) => c.status === "done");
-  const doneCur = cur.filter((c) => c.status === "done");
-  const donePrev = prev.filter((c) => c.status === "done");
-  const avg = (a: typeof done) => (a.length ? a.reduce((x, c) => x + c.score, 0) / a.length : 0);
-  // must-pass criteria from the approved set
-  const { mustPassIds } = await import("../lib/context.js");
-  const mustIds = await mustPassIds(orgId);
-  const callIds = new Set(callRows.map((c) => c.id));
-  const crit = (await db.select().from(s.criterionResults)).filter((r) => callIds.has(r.callId));
-  const critFail = (cid: string) => crit.some((r) => r.callId === cid && r.result === "fail" && mustIds.has(r.criterionId));
-  const critical = callRows.filter((c) => c.status === "done" && critFail(c.id));
-  const failed = callRows.filter((c) => c.status === "failed");
-  // per-employee current vs previous avg -> drops / improvers
-  const perEmp = emps.map((e) => {    const mine = doneCur.filter((c) => c.employeeId === e.id).map((c) => c.score);
-    const minePrev = donePrev.filter((c) => c.employeeId === e.id).map((c) => c.score);
-    const a = mine.length ? mine.reduce((x, y) => x + y, 0) / mine.length : 0;
-    const b = minePrev.length ? minePrev.reduce((x, y) => x + y, 0) / minePrev.length : 0;
-    return { id: e.id, name: e.name, department: e.department, score: Math.round(a * 10) / 10 || null, delta: mine.length && minePrev.length ? Math.round((a - b) * 10) / 10 : 0, calls: mine.length };
-  });
-  const { getRules } = await import("./coaching.js");
-  const rules = await getRules(orgId);
-  const drops = perEmp.filter((e) => e.delta <= -rules.dropPoints && e.calls > 0).sort((a, b) => a.delta - b.delta);
-  const improvers = perEmp.filter((e) => e.delta > 0 && e.calls > 0).sort((a, b) => b.delta - a.delta).slice(0, 5);
-  const declines = perEmp.filter((e) => e.delta < 0 && e.calls > 0).sort((a, b) => a.delta - b.delta).slice(0, 5);
-  const needCoach = perEmp.filter((e) => (e.score ?? 100) < rules.scoreBelow && e.calls > 0);
-  // human-flagged sessions
-  const sessions = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.orgId, orgId));
-  const flagged = sessions.filter((x) => x.humanFlag).slice(-5);
-  // agents: online if seen in last 15 min
-  const online = emps.filter((e) => e.lastSeen && Date.now() - +new Date(e.lastSeen) < 15 * 60e3).length;
-  const offline = emps.filter((e) => e.agentStatus !== "never" && !(e.lastSeen && Date.now() - +new Date(e.lastSeen) < 15 * 60e3));
-  // action items follow-through
-  const items = await db.select().from(s.actionItems).where(eq(s.actionItems.orgId, orgId));
-  const follow = items.length ? Math.round(items.filter((i) => i.status === "done").length / items.length * 100) : null;
-  // charts
-  const byDay: Record<string, number[]> = {};
-  for (const c of done) { const d = new Date(c.startedAt || 0).toISOString().slice(0, 10); (byDay[d] = byDay[d] || []).push(c.score); }
-  const trend = Object.entries(byDay).sort().map(([t, vs]) => ({ t, score: Math.round(vs.reduce((a, b) => a + b, 0) / vs.length * 10) / 10 }));
-  const byCrit: Record<string, { name: string; fails: number; total: number }> = {};
-  for (const r of crit) {
-    const k = byCrit[r.criterionId] = byCrit[r.criterionId] || { name: r.criterionName, fails: 0, total: 0 };
-    k.total++; if (r.result === "fail") k.fails++;
-  }
-  const failedCrit = Object.values(byCrit).sort((a, b) => b.fails - a.fails).slice(0, 6);
-  const buckets = [0, 0, 0, 0, 0]; // <50,50-60,60-70,70-85,85+
-  for (const c of done) buckets[c.score < 50 ? 0 : c.score < 60 ? 1 : c.score < 70 ? 2 : c.score < 85 ? 3 : 4]++;
-  const delta = (a: number, b: number) => (b ? Math.round((a - b) * 10) / 10 : 0);
-  res.json({
-    kpis: {
-      calls: { value: done.length, delta: doneCur.length - donePrev.length },
-      avg: { value: done.length ? Math.round(avg(done) * 10) / 10 : null, delta: delta(avg(doneCur), avg(donePrev)) },
-      critical: { value: critical.length, delta: 0 },
-      needCoach: { value: needCoach.length, delta: 0 },
-      coverage: { value: callRows.length ? Math.round(done.length / callRows.length * 100) : null, agentsOnline: online, agentsTotal: emps.length },
-      follow: { value: follow, delta: 0 },
-    },
-    attention: {
-      drops: drops.slice(0, 5).map((e) => ({ kind: "drop", employeeId: e.id, text: `${e.name} dropped ${e.delta} points`, link: `/employees/${e.id}` })),
-      critical: critical.slice(0, 5).map((c) => ({ kind: "critical", callId: c.id, text: `Critical failure: ${c.score} on ${new Date(c.startedAt || 0).toLocaleDateString()}`, link: `/calls/${c.id}` })),
-      flagged: flagged.map((x: any) => ({ kind: "flag", sessionId: x.id, text: `Human evaluator requested`, link: `/coach/${x.id}?token=${x.token}` })),
-      failed: failed.slice(0, 5).map((c) => ({ kind: "failed", callId: c.id, text: `Processing failed (${c.language})`, link: `/calls/${c.id}` })),
-      offline: offline.slice(0, 5).map((e) => ({ kind: "offline", employeeId: e.id, text: `${e.name}'s desktop agent offline`, link: `/employees/${e.id}` })),
-    },
-    charts: { trend, failedCrit, buckets },
-    improvers, declines,
-    recent: callRows.slice().sort((a, b) => +new Date(b.startedAt || 0) - +new Date(a.startedAt || 0)).slice(0, 5),
-    employees: emps.map((e) => ({ id: e.id, name: e.name })),
-  });
-});
 
 // ---- memos ----
 export const memoRouter = Router();
@@ -454,7 +384,6 @@ coachRouter.post("/:id/flag", async (req, res) => {
   res.json({ ok: true });
 });
 
-miscRouter.use("/dashboard", dashRouter);
 miscRouter.use("/calls", callRouter);
 miscRouter.use("/agent", agentRouter);
 miscRouter.use("/memos", memoRouter);

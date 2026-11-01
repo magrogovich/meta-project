@@ -1,14 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useState } from "react";
-import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Card, Pill, scoreTone, EmptyState } from "../components/ui";
+import { Card, Pill, scoreTone, EmptyState, DateField } from "../components/ui";
 
 const flagTone = (f: string): "red" | "amber" | "gray" => (f === "critical" || f === "failed" ? "red" : f === "low" ? "amber" : "gray");
 
 export function Calls() {
-  const [f, setF] = useState({ from: "", to: "", employeeId: "", dept: "", lang: "", min: "", max: "", critical: false, failed: false, page: 1, sort: "startedAt", order: "desc" as "asc" | "desc" });
+  const [, nav] = useLocation();
+  const init = () => {
+    const p = new URLSearchParams(location.search);
+    return {
+      from: p.get("from") || "", to: p.get("to") || "", employeeId: p.get("employeeId") || "",
+      dept: p.get("dept") || "", lang: p.get("lang") || "", min: p.get("min") || "", max: p.get("max") || "",
+      critical: p.get("critical") === "1", failed: p.get("failed") === "1", failCrit: p.get("failCrit") || "",
+      page: 1, sort: "startedAt", order: "desc" as "asc" | "desc",
+    };
+  };
+  const [f, setF] = useState(init);
   const set = (p: Partial<typeof f>) => setF({ ...f, ...p, ...(p.page === undefined ? {} : {}) });
   const resetPage = (p: Partial<typeof f>) => setF({ ...f, ...p, page: 1 });
   const q = new URLSearchParams(
@@ -33,8 +43,8 @@ export function Calls() {
       </div>
 
       <Card className="flex flex-wrap items-end gap-2 p-3">
-        <div><label className="text-[11px] font-semibold text-gray-500">From</label><input className="input mt-1 w-36" type="date" value={f.from} onChange={(e) => resetPage({ from: e.target.value })} /></div>
-        <div><label className="text-[11px] font-semibold text-gray-500">To</label><input className="input mt-1 w-36" type="date" value={f.to} onChange={(e) => resetPage({ to: e.target.value })} /></div>
+        <div><label className="text-[11px] font-semibold text-gray-500">From</label><DateField value={f.from} onChange={(v) => resetPage({ from: v })} /></div>
+        <div><label className="text-[11px] font-semibold text-gray-500">To</label><DateField value={f.to} onChange={(v) => resetPage({ to: v })} /></div>
         <div><label className="text-[11px] font-semibold text-gray-500">Employee</label>
           <select className="input mt-1 w-40" value={f.employeeId} onChange={(e) => resetPage({ employeeId: e.target.value })}>
             <option value="">all</option>{((emps as any[]) || []).map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
@@ -47,6 +57,7 @@ export function Calls() {
         <div><label className="text-[11px] font-semibold text-gray-500">Max</label><input className="input mt-1 w-20" type="number" value={f.max} onChange={(e) => resetPage({ max: e.target.value })} /></div>
         <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={f.critical} onChange={(e) => resetPage({ critical: e.target.checked })} className="h-4 w-4 accent-gray-900" /> Critical only</label>
         <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={f.failed} onChange={(e) => resetPage({ failed: e.target.checked })} className="h-4 w-4 accent-gray-900" /> Failed only</label>
+        {f.failCrit && <span className="badge bg-red-50 text-red-700 ring-1 ring-red-200">failed: {f.failCrit} <button className="ml-1 font-bold" onClick={() => resetPage({ failCrit: "" })}>×</button></span>}
       </Card>
 
       <Card>
@@ -66,8 +77,8 @@ export function Calls() {
               </tr></thead>
               <tbody className="divide-y divide-gray-100">
                 {rows.map((c: any) => (
-                  <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2.5 font-medium text-gray-900"><Link className="hover:underline" href={`/calls/${c.id}`}>{c.employeeName}</Link>
+                  <tr key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => nav(`/calls/${c.id}`)}>
+                    <td className="px-4 py-2.5 font-medium text-gray-900">{c.employeeName}
                       <span className="block text-[11px] font-normal text-gray-400">{c.department}</span></td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-gray-500">{new Date(c.startedAt).toLocaleString()}</td>
                     <td className="px-2 py-2.5 text-right text-gray-500">{c.durationSec}s</td>

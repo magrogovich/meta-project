@@ -12,7 +12,7 @@ export function Settings() {
   const { role } = useAuth();
   const isAdmin = role !== "evaluator";
   const [tab, setTab] = useState("Organization");
-  const tabs = ["Organization", "Team", "Departments", "Coaching rules", "Retention", "Audit log"];
+  const tabs = ["Organization", "Team", "Departments", "Quality targets", "Coaching rules", "Retention", "Audit log"];
   return (
     <div className="w-full space-y-4">
       <h1 className="text-lg font-bold tracking-tight text-gray-900">Settings</h1>
@@ -24,6 +24,7 @@ export function Settings() {
       {tab === "Organization" && <OrgTab isAdmin={isAdmin} refresh={() => qc.invalidateQueries({ queryKey: ["settings"] })} />}
       {tab === "Team" && <TeamTab isAdmin={isAdmin} />}
       {tab === "Departments" && <DeptTab isAdmin={isAdmin} />}
+      {tab === "Quality targets" && <QualityTab isAdmin={isAdmin} />}
       {tab === "Coaching rules" && <RulesTab isAdmin={isAdmin} />}
       {tab === "Retention" && <RetentionTab isAdmin={isAdmin} />}
       {tab === "Audit log" && <AuditTab />}
@@ -150,15 +151,44 @@ function DeptTab({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+function QualityTab({ isAdmin }: { isAdmin: boolean }) {
+  const qc = useQueryClient();
+  const { data: rules } = useQuery({ queryKey: ["rules"], queryFn: () => api("/api/coaching/rules") });
+  const [f, setF] = useState({ qaTarget: 80, passThreshold: 70, dropPoints: 10, criticalCount: 3 });
+  const [init, setInit] = useState(false);
+  if (rules && !init) { setF({ qaTarget: rules.qaTarget ?? 80, passThreshold: rules.passThreshold ?? 70, dropPoints: rules.dropPoints ?? 10, criticalCount: rules.criticalCount ?? 3 }); setInit(true); }
+  const save = useMutation({
+    mutationFn: () => api("/api/coaching/rules", { method: "PATCH", body: JSON.stringify({ ...f, scoreBelow: f.passThreshold }) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["rules"] }); qc.invalidateQueries({ queryKey: ["dash"] }); },
+  });
+  return (
+    <Card className="space-y-3 p-4">
+      <p className="text-xs font-semibold text-gray-900">Quality targets (admin only)</p>
+      <p className="text-[11px] text-gray-500">Feeds the dashboard KPIs, trend target line and the needs-coaching rules.</p>
+      {[
+        ["qaTarget", "Team QA score target"],
+        ["passThreshold", "Pass threshold for a call"],
+        ["dropPoints", "Score drop alert (points)"],
+        ["criticalCount", "Repeated-failure count"],
+      ].map(([k, label]) => (
+        <div key={k} className="flex items-center gap-2">
+          <label className="w-56 text-xs text-gray-600">{label}</label>
+          <input className="input w-28" type="number" disabled={!isAdmin} value={(f as any)[k]} onChange={(e) => setF({ ...f, [k]: Number(e.target.value) })} />
+        </div>))}
+      {isAdmin && <button className="btn" onClick={() => save.mutate()}>Save targets</button>}
+    </Card>
+  );
+}
+
 function RulesTab({ isAdmin }: { isAdmin: boolean }) {
   const qc = useQueryClient();
   const { data: rules } = useQuery({ queryKey: ["rules"], queryFn: () => api("/api/coaching/rules") });
   const [f, setF] = useState({ scoreBelow: 70, dropPoints: 10, criticalCount: 3 });
   const [init, setInit] = useState(false);
-  if (rules && !init) { setF(rules); setInit(true); }
+  if (rules && !init) { setF({ scoreBelow: rules.scoreBelow ?? rules.passThreshold ?? 70, dropPoints: rules.dropPoints ?? 10, criticalCount: rules.criticalCount ?? 3 }); setInit(true); }
   const save = useMutation({
-    mutationFn: () => api("/api/coaching/rules", { method: "PATCH", body: JSON.stringify(f) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["rules"] }); qc.invalidateQueries({ queryKey: ["queue"] }); },
+    mutationFn: () => api("/api/coaching/rules", { method: "PATCH", body: JSON.stringify({ ...f, passThreshold: f.scoreBelow }) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["rules"] }); qc.invalidateQueries({ queryKey: ["queue"] }); qc.invalidateQueries({ queryKey: ["dash"] }); },
   });
   return (
     <Card className="space-y-3 p-4">

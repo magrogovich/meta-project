@@ -7,14 +7,17 @@ import { authMw } from "./auth.js";
 export const coachRouter2 = Router();
 coachRouter2.use(authMw);
 
-export type CoachRules = { scoreBelow: number; dropPoints: number; criticalCount: number };
+export type CoachRules = { scoreBelow: number; dropPoints: number; criticalCount: number; qaTarget: number; passThreshold: number };
 export async function getRules(orgId: string): Promise<CoachRules> {
   const rows = await db.select().from(s.orgs).where(eq(s.orgs.id, orgId));
   const c = (rows[0]?.settings as any)?.coaching || {};
+  const q = (rows[0]?.settings as any)?.quality || {};
   return {
-    scoreBelow: Number(c.scoreBelow) || 70,
-    dropPoints: Number(c.dropPoints) || 10,
-    criticalCount: Number(c.criticalCount) || 3,
+    qaTarget: Number(q.qaTarget ?? c.qaTarget) || 80,
+    passThreshold: Number(q.passThreshold ?? c.passThreshold) || 70,
+    scoreBelow: Number(q.scoreBelow ?? c.scoreBelow) || 70,
+    dropPoints: Number(q.dropPoints ?? c.dropPoints) || 10,
+    criticalCount: Number(q.criticalCount ?? c.criticalCount) || 3,
   };
 }
 
@@ -23,9 +26,16 @@ coachRouter2.get("/rules", async (req: any, res) => {
 });
 coachRouter2.patch("/rules", async (req: any, res) => {
   if (req.user.role !== "admin") return res.status(403).json({ error: "admins only" });
-  const { scoreBelow, dropPoints, criticalCount } = req.body || {};
+  const { scoreBelow, dropPoints, criticalCount, qaTarget, passThreshold } = req.body || {};
   const rows = await db.select().from(s.orgs).where(eq(s.orgs.id, req.user.orgId));
-  const settings = { ...(rows[0]?.settings as object || {}), coaching: { scoreBelow, dropPoints, criticalCount } };
+  const cur = (rows[0]?.settings as any) || {};
+  const quality = { ...(cur.quality || {}), ...(cur.coaching || {}) };
+  if (scoreBelow !== undefined) quality.scoreBelow = Number(scoreBelow);
+  if (dropPoints !== undefined) quality.dropPoints = Number(dropPoints);
+  if (criticalCount !== undefined) quality.criticalCount = Number(criticalCount);
+  if (qaTarget !== undefined) quality.qaTarget = Number(qaTarget);
+  if (passThreshold !== undefined) quality.passThreshold = Number(passThreshold);
+  const settings = { ...cur, quality, coaching: { ...(cur.coaching || {}), ...quality } };
   await db.update(s.orgs).set({ settings }).where(eq(s.orgs.id, req.user.orgId));
   res.json(await getRules(req.user.orgId));
 });

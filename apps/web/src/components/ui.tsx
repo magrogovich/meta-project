@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`card ${className}`}>{children}</div>;
@@ -40,14 +40,48 @@ export function Pill({ tone, children }: { tone: "green" | "amber" | "red" | "gr
   return <span className={`badge ${map[tone]}`}>{children}</span>;
 }
 
-export const scoreTone = (s: number): "green" | "amber" | "red" => (s >= 80 ? "green" : s >= 60 ? "amber" : "red");
+export const scoreTone = (s: number | null, target = 80, pass = 70): "green" | "amber" | "red" => (s == null ? "gray" : s >= target ? "green" : s >= pass ? "amber" : "red");
 
-export function EmptyState({ title, hint, action }: { title: string; hint: string; action?: ReactNode }) {
+export const scoreColor = (s: number | null, target = 80, pass = 70) =>
+  s == null ? "#cbd5e1" : s >= target ? "#16a34a" : s >= pass ? "#d97706" : "#dc2626";
+
+export function Skeleton({ className = "h-16" }: { className?: string }) {
+  return <div className={`animate-pulse rounded-xl bg-gray-100 ${className}`} />;
+}
+
+export function MetricTip({ text }: { text: string }) {
   return (
+    <span title={text} className="ml-1 inline-grid h-4 w-4 cursor-help place-items-center rounded-full bg-gray-100 text-[10px] font-bold text-gray-500">?</span>
+  );
+}
+
+export function EmptyState({ title, hint, action }: { title: string; hint: string; action?: ReactNode }) {  return (
     <div className="card flex flex-col items-center px-4 py-10 text-center">
       <div className="text-sm font-semibold text-gray-900">{title}</div>
       <div className="mt-1 max-w-sm text-xs text-gray-500">{hint}</div>
       {action && <div className="mt-3">{action}</div>}
     </div>
+  );
+}
+
+// Plain-text date field (YYYY-MM-DD) — avoids the browser's mm/dd/yyyy placeholder.
+export function DateField({ value, onChange, className = "input w-36" }: { value: string; onChange: (v: string) => void; className?: string }) {
+  const [text, setText] = useState(value);
+  const [bad, setBad] = useState(false);
+  useEffect(() => { setText(value); setBad(false); }, [value]);
+  return (
+    <input
+      className={`${className} ${bad ? "!border-red-400" : ""}`}
+      placeholder="---- -- --"
+      inputMode="numeric"
+      value={text}
+      onChange={(e) => {
+        const v = e.target.value;
+        setText(v);
+        if (!v) { setBad(false); onChange(""); return; }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v))) { setBad(false); onChange(v); }
+        else setBad(true);
+      }}
+    />
   );
 }

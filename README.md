@@ -5,8 +5,11 @@ AI QA for 100% of call-center calls. Stack: pnpm workspaces · Express 5 + esbui
 1. `createdb arocall` (or it uses postgres://postgres:toor@localhost:5432/arocall from `.env`)
 2. `pnpm install` (in root, apps/api, apps/web)
 3. `pnpm --filter @arocall/api test` — scoring tests (schema, verbatim quotes, weighted score)
-4. `pnpm --filter @arocall/api seed` — demo org login `demo@arocall.ai / demo1234`, 5 employees × 8 calls
+4. `pnpm --filter @arocall/api seed` — demo org login `demo@arocall.ai / demo1234`, 5 employees × 12 calls over 60 days (improver, decliner, strong, empathy-weak, average) + 2 failed + supervisor requests + human-flagged session
 5. `pnpm dev` — starts API :4000 + dashboard :5173 together (logs prefixed `[api]` / `[web]`)
+
+## Dashboard
+Default range: last 30 days vs previous 30 days (custom ranges compare against the preceding equal-length period). Six KPI cards (QA score, pass rate, critical failure rate, sentiment, resolution, coverage — each with delta, sparkline, tooltip definition, click-through to Calls), severity-ranked Needs attention (critical / warning / info, 8 max), score trend with target line + volume bars (weekly when range > 60d, "Not enough data" under 3 points), criteria pass rates (worst first, click to failed calls), Agent × criteria heatmap (gray = fewer than 3 calls, click a cell for that employee's failed calls), sortable agents table, conversation metrics (talk ratio, dead air %, interruptions, handle time, pace — computed in code from timestamps), recent 5 calls. Scores: green ≥ target, amber ≥ pass threshold, red below. No data shows "—", never 0. Histogram moved to Analytics (average + median).
 
 Demo flow: login → walkthrough (Help) → Guidelines (upload Markdown, write your own, or starter template → Activate → generate + approve criteria) → Employees (add via wizard, copy/reveal the persistent session key) → employee profile → call detail (audio + transcript click-to-seek + evidence quotes with guideline citations) → coaching memos + AI coaching voice session.
 Agent: `cd agent && npm run setup` (paste key) then `npm start`; drop a .wav into `agent/inbox/` to simulate a recorded call — it chunk-uploads and appears analyzed. Keys are persistent and revealable (masked + eye icon, copy logged); regenerate/revoke from the employee Agent tab. Revoked keys make the agent show a clear error and pause uploads.
@@ -16,7 +19,10 @@ No manual schema push needed: the API runs `ensureSchema()` (`apps/api/src/db/mi
 If you change `apps/api/src/db/schema.ts`, apply the diff with drizzle-kit: `pnpm --filter @arocall/api db:push` (uses `drizzle.config.ts` + `DATABASE_URL`).
 
 ## Settings
-Settings page (admin-gated writes): organization name, team invites (evaluator role; accept via the invite link), departments (rename cascades to employees) + offered languages, coaching rules (shared by the queue and dashboard card), retention window with a manual cleanup run, and the audit log (key reveals/copies, call views, cleanup runs).
+Settings page (admin-gated writes): organization name, team invites (evaluator role; accept via the invite link), departments (rename cascades to employees) + offered languages, Quality targets (QA target default 80, pass threshold 70, drop alert 10 pts, repeated-failure count — feeds KPIs, trend target and coaching queue), coaching rules (same values, shared by the queue), retention window with a manual cleanup run, and the audit log (key reveals/copies, call views, cleanup runs).
+
+## Call analysis fields
+Each analyzed call stores: per-criterion results (verbatim quote + timestamp + guideline section), customer sentiment start/end + issue resolved + supervisor request (each with verbatim quote + timestamp, "AI estimate" in the UI), and computed conversation metrics (talk:listening ratio, dead air %, interruptions, handle time, agent WPM — from transcript timestamps in `lib/conversation.ts`, never the LLM). Older calls show "—" until `Re-run analysis` (single or date-range bulk) backfills them.
 
 ## Env
 See `.env.example`. All Muse calls live in `apps/api/src/lib/muse.ts` (swap models by config):

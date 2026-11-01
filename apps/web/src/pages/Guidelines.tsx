@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, useRoute, useLocation } from "wouter";
 import { useAuth } from "../lib/auth";
 import { ArrowLeft, Upload, PenLine, Eye, History, RotateCcw, Trash2, Archive, CheckCircle, Wand2, Save, ListPlus } from "lucide-react";
-import { Card, CardHeader, Pill, EmptyState } from "../components/ui";
+import { Card, CardHeader, Pill, EmptyState, DateField } from "../components/ui";
 import { renderMarkdown, diffLines, addSectionIds } from "../lib/markdown";
 
 const STARTER = `# Call Handling Guidelines
@@ -369,8 +369,8 @@ export function GuidelineDoc() {
         <h3 className="text-xs font-bold text-gray-900">Re-run analysis</h3>
         <p className="text-[11px] text-gray-500">After guideline or criteria changes, re-score calls in a date range against the current setup.</p>
         <div className="mt-2 flex flex-wrap items-end gap-2">
-          <input className="input w-36" type="date" value={rerun.from} onChange={(e) => setRerun({ ...rerun, from: e.target.value })} />
-          <input className="input w-36" type="date" value={rerun.to} onChange={(e) => setRerun({ ...rerun, to: e.target.value })} />
+          <div><label className="text-[11px] font-semibold text-gray-500">From</label><DateField value={rerun.from} onChange={(v) => setRerun({ ...rerun, from: v })} /></div>
+          <div><label className="text-[11px] font-semibold text-gray-500">To</label><DateField value={rerun.to} onChange={(v) => setRerun({ ...rerun, to: v })} /></div>
           <button className="btn" onClick={rerunRange}>Re-run range</button>
           {rerunMsg && <span className="text-xs text-gray-600">{rerunMsg}</span>}
         </div>

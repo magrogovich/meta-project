@@ -234,7 +234,7 @@ empRouter.get("/:id/profile", async (req: any, res) => {
   const strengths = Object.entries(byCrit).sort((a, b) => (avgOf(b[1]) - avgOf(a[1]))).slice(0, 2).map(([k, v]) => `${k} (avg ${Math.round(avgOf(v))})`);
   const weaknesses = Object.entries(byCrit).sort((a, b) => (avgOf(a[1]) - avgOf(b[1]))).slice(0, 2).map(([k, v]) => `${k} (avg ${Math.round(avgOf(v))})`);
   const breakdown = Object.entries(byCrit).map(([k, v]) => ({ name: k, avg: Math.round(avgOf(v) * 10) / 10, count: v.length })).sort((a, b) => b.avg - a.avg);
-  res.json({ employee: { ...stripSecrets(emps[0]), overallScore: avg, agentStatus: agentStatusOf(emps[0]) }, calls: callRows, trend: callRows.slice().reverse().map((c) => ({ t: c.startedAt, score: c.score })), strengths, weaknesses, breakdown });
+  res.json({ employee: { ...stripSecrets(emps[0]), overallScore: avg, agentStatus: agentStatusOf(emps[0]) }, calls: callRows, trend: callRows.slice().reverse().map((c) => ({ t: c.startedAt, score: c.score, id: c.id })), strengths, weaknesses, breakdown });
 });
 const avgOf = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
 

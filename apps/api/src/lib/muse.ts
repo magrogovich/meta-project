@@ -127,7 +127,9 @@ export const DEFAULT_CRITERIA: Criterion[] = [
 // --- Deterministic fallback scorer: guarantees verbatim quotes ---
 export function deterministicScore(transcript: TLine[], criteria: Criterion[], language = "en") {
   const agentLines = transcript.filter((l) => l.speaker === "Agent");
+  const custLines = transcript.filter((l) => l.speaker === "Customer");
   const allText = agentLines.map((l) => l.text).join(" ").toLowerCase();
+  const custText = custLines.map((l) => l.text).join(" ").toLowerCase();
   const pick = (needles: string[], fallbackIdx: number) => {
     for (const l of agentLines) { const low = l.text.toLowerCase(); if (needles.some((n) => low.includes(n))) return l; }
     return agentLines[Math.min(fallbackIdx, agentLines.length - 1)] || transcript[0];
@@ -150,12 +152,33 @@ export function deterministicScore(transcript: TLine[], criteria: Criterion[], l
   const den = criteria.reduce((a, c) => a + c.weight, 0) || 1;
   const total = Math.round((num / den) * 10) / 10;
   const summary = total >= 80 ? "Strong call: policy followed with clear resolution." : total >= 60 ? "Average call: basics covered, empathy or closing gaps." : "Weak call: missed key QA steps, needs coaching.";
+  // Conversation-outcome heuristics (verbatim evidence, verified downstream).
+  const firstCust = custLines[0] || transcript.find((l) => l.speaker === "Customer") || transcript[0];
+  const lastCust = custLines[custLines.length - 1] || firstCust;
+  const neg = (t: string) => /wrong|angry|furious|terrible|awful|waiting.*week|frustrat|upset|complaint|supervisor|manager/i.test(t);
+  const pos = (t: string) => /thank|great|perfect|wonderful|happy|resolved|appreciat/i.test(t);
+  const sentimentOf = (t: string) => (neg(t) ? "negative" : pos(t) ? "positive" : "neutral");
+  const supLine = transcript.find((l) => /supervisor|manager|escalate/i.test(l.text));
+  const resLine = transcript.find((l) => /resolved|fixed|refund|replacement|i will .* by|sorted/i.test(l.text));
+  const unresLine = transcript.find((l) => /cannot|can't|not possible|call back later|don't know/i.test(l.text));
   return {
     language, summary,
     wentWell: results.filter((r) => r.result === "pass").map((r) => `${r.criterionName}: "${r.evidenceQuote.slice(0, 80)}"`).slice(0, 3),
     wentWrong: results.filter((r) => r.result !== "pass").map((r) => `${r.criterionName} (${r.result}, ${r.score})`).slice(0, 3),
     tags: criteria.map((c) => c.id).slice(0, 5),
     results, total,
+    customerSentimentStart: sentimentOf(firstCust?.text || ""),
+    customerSentimentStartQuote: firstCust?.text || "",
+    customerSentimentStartAt: firstCust?.start || 0,
+    customerSentimentEnd: sentimentOf(lastCust?.text || ""),
+    customerSentimentEndQuote: lastCust?.text || "",
+    customerSentimentEndAt: lastCust?.start || 0,
+    issueResolved: resLine ? "yes" : unresLine ? "no" : custText.includes("thank") || total >= 75 ? "yes" : "unclear",
+    issueResolvedQuote: (resLine || unresLine || lastCust)?.text || "",
+    issueResolvedAt: (resLine || unresLine || lastCust)?.start || 0,
+    customerRequestedSupervisor: !!supLine,
+    supervisorQuote: supLine?.text || "",
+    supervisorAt: supLine?.start || 0,
   };
 }
 
@@ -163,11 +186,17 @@ export async function scoreCall(transcript: TLine[], criteria: (Criterion & { gu
   if (!isMock) {
     try {
       const raw = await llm(
-        "You are a call-center QA scorer. Reply ONLY JSON {\"language\",\"summary\",\"wentWell\":[],\"wentWrong\":[],\"tags\":[],\"results\":[{\"criterionId\",\"result\":\"pass|partial|fail\",\"score\":0-100,\"evidenceQuote\":\"verbatim line\",\"evidenceStart\":number,\"guidelineRef\":\"guidelineId:sectionId\"}]}. Every evidenceQuote MUST be a verbatim transcript line. Every guidelineRef MUST be one of the criterion's cited sections.",
+        "You are a call-center QA scorer. Reply ONLY JSON {\"language\",\"summary\",\"wentWell\":[],\"wentWrong\":[],\"tags\":[],\"results\":[{\"criterionId\",\"result\":\"pass|partial|fail\",\"score\":0-100,\"evidenceQuote\":\"verbatim line\",\"evidenceStart\":number,\"guidelineRef\":\"guidelineId:sectionId\"}],\"customerSentimentStart\":\"negative|neutral|positive\",\"customerSentimentStartQuote\":\"verbatim customer line\",\"customerSentimentStartAt\":number,\"customerSentimentEnd\":\"negative|neutral|positive\",\"customerSentimentEndQuote\":\"verbatim customer line\",\"customerSentimentEndAt\":number,\"issueResolved\":\"yes|no|unclear\",\"issueResolvedQuote\":\"verbatim line\",\"issueResolvedAt\":number,\"customerRequestedSupervisor\":bool,\"supervisorQuote\":\"verbatim line or empty\",\"supervisorAt\":number}. Every *Quote MUST be a verbatim transcript line. Every guidelineRef MUST be one of the criterion's cited sections.",
         JSON.stringify({ guidelines: guidelinesText.slice(0, 20000), criteria, transcript }).slice(0, 24000), true);
       const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
       const full = transcript.map((t) => t.text);
       const norm = (s: string) => s.trim().toLowerCase();
+      const fixQuote = (q: string, fbSpeaker?: string) => {
+        if (q && full.some((t) => norm(t).includes(norm(String(q)).slice(0, 24)))) return q;
+        const fb = (fbSpeaker ? transcript.find((t) => t.speaker === fbSpeaker) : null) || transcript.find((t) => t.speaker === "Agent") || transcript[0];
+        return fb?.text || "";
+      };
+      const atOf = (q: string) => transcript.find((t) => t.text === q)?.start || 0;
       for (const r of parsed.results || []) {
         const ok = full.some((t) => norm(t).includes(norm(String(r.evidenceQuote || "")).slice(0, 24)) && r.evidenceQuote);
         if (!ok) {
@@ -177,6 +206,16 @@ export async function scoreCall(transcript: TLine[], criteria: (Criterion & { gu
         const crit = criteria.find((c) => c.id === r.criterionId);
         if (!crit?.guidelineRefs?.includes(r.guidelineRef)) r.guidelineRef = crit?.guidelineRefs?.[0] || "";
       }
+      // Verify new AI-estimate quotes are verbatim.
+      parsed.customerSentimentStartQuote = fixQuote(parsed.customerSentimentStartQuote, "Customer");
+      parsed.customerSentimentEndQuote = fixQuote(parsed.customerSentimentEndQuote, "Customer");
+      parsed.issueResolvedQuote = fixQuote(parsed.issueResolvedQuote);
+      if (parsed.customerRequestedSupervisor) parsed.supervisorQuote = fixQuote(parsed.supervisorQuote);
+      else { parsed.supervisorQuote = ""; parsed.supervisorAt = 0; }
+      if (!parsed.customerSentimentStartAt) parsed.customerSentimentStartAt = atOf(parsed.customerSentimentStartQuote);
+      if (!parsed.customerSentimentEndAt) parsed.customerSentimentEndAt = atOf(parsed.customerSentimentEndQuote);
+      if (!parsed.issueResolvedAt) parsed.issueResolvedAt = atOf(parsed.issueResolvedQuote);
+      if (parsed.customerRequestedSupervisor && !parsed.supervisorAt) parsed.supervisorAt = atOf(parsed.supervisorQuote);
       const num = (parsed.results || []).reduce((a: number, r: any) => a + r.score * (criteria.find((c) => c.id === r.criterionId)?.weight ?? 0), 0);
       const den = criteria.reduce((a, c) => a + c.weight, 0) || 1;
       return { ...parsed, total: Math.round((num / den) * 10) / 10, mock: false };

@@ -12,6 +12,7 @@ import { coachRouter2 } from "./routes/coaching.js";
 import { guideRouter } from "./routes/guidelines.js";
 import { settingsRouter } from "./routes/settings.js";
 import { miscRouter } from "./routes/calls.js";
+import { dashRouter } from "./routes/dashboard.js";
 
 const log = pino({ level: "info" });
 const app = express();
@@ -29,6 +30,7 @@ app.use("/api/departments", deptRouter);
 app.use("/api/coaching", coachRouter2);
 app.use("/api/guidelines", guideRouter);
 app.use("/api/settings", settingsRouter);
+app.use("/api/dashboard", dashRouter);
 app.use("/api", miscRouter);
 
 const PORT = Number(process.env.PORT || 4000);

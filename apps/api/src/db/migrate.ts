@@ -31,5 +31,24 @@ ALTER TABLE calls ADD COLUMN IF NOT EXISTS guideline_refs jsonb not null default
 ALTER TABLE criterion_results ADD COLUMN IF NOT EXISTS guideline_ref text not null default '';
 ALTER TABLE calls DROP COLUMN IF EXISTS scorecard_version;
 CREATE TABLE IF NOT EXISTS audit_log (id uuid primary key default gen_random_uuid(), org_id uuid not null references orgs(id), user_id text not null default '', action text not null, call_id text not null default '', created_at timestamp default now());
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS sentiment_start text not null default '';
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS sentiment_end text not null default '';
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS sentiment_start_quote text not null default '';
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS sentiment_end_quote text not null default '';
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS sentiment_start_at real not null default 0;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS sentiment_end_at real not null default 0;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS issue_resolved text not null default '';
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS issue_resolved_quote text not null default '';
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS issue_resolved_at real not null default 0;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS supervisor_requested boolean not null default false;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS supervisor_quote text not null default '';
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS supervisor_at real not null default 0;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS talk_ratio real;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS dead_air_pct real;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS interruptions integer not null default 0;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS agent_wpm real;
+CREATE INDEX IF NOT EXISTS calls_org_started ON calls (org_id, started_at);
+CREATE INDEX IF NOT EXISTS calls_emp_started ON calls (employee_id, started_at);
+CREATE INDEX IF NOT EXISTS crit_call ON criterion_results (call_id);
 `;
 export async function ensureSchema() { await pool.query(DDL); }

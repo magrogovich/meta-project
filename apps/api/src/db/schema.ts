@@ -3,7 +3,7 @@ import { pgTable, uuid, text, timestamp, integer, real, jsonb, boolean } from "d
 export const orgs = pgTable("orgs", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
-  settings: jsonb("settings").$type<{ coaching?: { scoreBelow?: number; dropPoints?: number; criticalCount?: number } }>().notNull().default({}),
+  settings: jsonb("settings").$type<{ coaching?: { scoreBelow?: number; dropPoints?: number; criticalCount?: number }; quality?: { qaTarget?: number; passThreshold?: number; scoreBelow?: number; dropPoints?: number; criticalCount?: number }; languages?: string[]; retentionDays?: number }>().notNull().default({}),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -65,6 +65,22 @@ export const calls = pgTable("calls", {
   wentWell: jsonb("went_well").$type<string[]>().notNull().default([]),
   wentWrong: jsonb("went_wrong").$type<string[]>().notNull().default([]),
   tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  sentimentStart: text("sentiment_start").notNull().default(""),
+  sentimentEnd: text("sentiment_end").notNull().default(""),
+  sentimentStartQuote: text("sentiment_start_quote").notNull().default(""),
+  sentimentEndQuote: text("sentiment_end_quote").notNull().default(""),
+  sentimentStartAt: real("sentiment_start_at").notNull().default(0),
+  sentimentEndAt: real("sentiment_end_at").notNull().default(0),
+  issueResolved: text("issue_resolved").notNull().default(""),
+  issueResolvedQuote: text("issue_resolved_quote").notNull().default(""),
+  issueResolvedAt: real("issue_resolved_at").notNull().default(0),
+  supervisorRequested: boolean("supervisor_requested").notNull().default(false),
+  supervisorQuote: text("supervisor_quote").notNull().default(""),
+  supervisorAt: real("supervisor_at").notNull().default(0),
+  talkRatio: real("talk_ratio"),
+  deadAirPct: real("dead_air_pct"),
+  interruptions: integer("interruptions").notNull().default(0),
+  agentWpm: real("agent_wpm"),
 });
 
 export const criterionResults = pgTable("criterion_results", {

@@ -8,7 +8,6 @@ import { AppLayout } from "./components/layout";
 import { Login, Walkthrough } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { EmployeeProfile, CallDetail } from "./pages/Employee";
-import { Analytics } from "./pages/Stub";
 import { Employees } from "./pages/Employees";
 import { Calls } from "./pages/Calls";
 import { Coaching } from "./pages/Coaching";
@@ -44,7 +43,6 @@ function App() {
                 <Route path="/coaching"><Coaching /></Route>
                 <Route path="/guidelines"><Guidelines /></Route>
                 <Route path="/guidelines/:id"><GuidelineDoc /></Route>
-                <Route path="/analytics"><Analytics /></Route>
                 <Route path="/settings"><Settings /></Route>
                 <Route><Redirect to="/" /></Route>
               </Switch>

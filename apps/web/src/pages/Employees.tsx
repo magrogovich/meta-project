@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, API } from "../lib/api";
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Plus, Upload, LayoutGrid, Table2, Eye, EyeOff, Copy, Check, Download, Mail, X } from "lucide-react";
 import { Card, CardHeader, Pill, scoreTone, EmptyState } from "../components/ui";
 
@@ -175,6 +175,7 @@ function CsvImport({ onDone }: { onDone: () => void }) {
 
 export function Employees() {
   const qc = useQueryClient();
+  const [, nav] = useLocation();
   const [view, setView] = useState<"table" | "cards">("table");
   const [f, setF] = useState({ q: "", dept: "", lang: "", status: "", agent: "" });
   const [wizard, setWizard] = useState(false);
@@ -246,12 +247,12 @@ export function Employees() {
               </tr></thead>
               <tbody className="divide-y divide-gray-100">
                 {list.map((e: any) => (
-                  <tr key={e.id} className="hover:bg-gray-50">
+                  <tr key={e.id} className="cursor-pointer hover:bg-gray-50" onClick={() => nav(`/employees/${e.id}`)}>
                     <td className="px-4 py-2.5">
-                      <Link href={`/employees/${e.id}`} className="flex items-center gap-2 font-medium text-gray-900 hover:underline">
+                      <div className="flex items-center gap-2 font-medium text-gray-900">
                         {e.photo ? <img src={e.photo} className="h-7 w-7 rounded-full object-cover" alt="" /> : <span className="grid h-7 w-7 place-items-center rounded-full bg-gray-900 text-[11px] font-bold text-white">{e.name[0]}</span>}
                         {e.name}
-                      </Link></td>
+                      </div></td>
                     <td className="px-2 py-2.5 text-gray-500">{e.department}</td>
                     <td className="px-2 py-2.5 text-gray-500">{(e.languages || []).join(", ")}</td>
                     <td className="px-2 py-2.5 text-right"><Pill tone={scoreTone(e.overallScore || 0)}>{e.overallScore ?? "No data yet"}</Pill></td>

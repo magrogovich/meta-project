@@ -104,9 +104,10 @@ function SessionsTab() {
                 <span className="ml-auto text-gray-400">{new Date(x.createdAt).toLocaleString()}</span>
               </div>
               <p className="mt-0.5 text-gray-500">Topics: {x.topics || "—"}</p>
-              <p className="text-gray-500">{x.summary || ""}</p>
+              <p className="text-gray-500">{x.summary || ""} · {x.transport || "meet"} · {x.status || ""}{x.meetUrl ? ` · ${x.meetUrl}` : ""}</p>
               {!!(x.actionItems || []).length && <p className="text-gray-500">Agreed: {(x.actionItems as string[]).join(" · ")}</p>}
-              <Link href={`/coach/${x.id}?token=${x.token}`} className="font-semibold text-indigo-700 hover:underline">Open session link →</Link>
+              <Link href={`/coach-room/${x.id}?token=${x.token}`} className="font-semibold text-indigo-700 hover:underline">Open coaching room →</Link>
+              {" · "}<Link href={`/coach/${x.id}?token=${x.token}`} className="text-gray-500 hover:underline">browser mode</Link>
             </li>))}
         </ul>)}
     </Card>

@@ -1,0 +1,1 @@
+{"name":"@arocall/coach-bot","version":"0.1.0","private":true,"type":"module","scripts":{"start":"tsx src/index.ts","login":"tsx src/index.ts login","join":"tsx src/index.ts join","test-say":"tsx src/index.ts test-say"},"dependencies":{"playwright":"^1.49.1","tsx":"^4.19.1","webrtcvad":"^0.0.0"},"devDependencies":{"@types/node":"^22.7.4","typescript":"^5.6.2"}}

@@ -49,6 +49,17 @@ ALTER TABLE calls ADD COLUMN IF NOT EXISTS interruptions integer not null defaul
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS agent_wpm real;
 CREATE INDEX IF NOT EXISTS calls_org_started ON calls (org_id, started_at);
 CREATE INDEX IF NOT EXISTS calls_emp_started ON calls (employee_id, started_at);
+CREATE TABLE IF NOT EXISTS coaching_turns (id uuid primary key default gen_random_uuid(), session_id uuid not null references coaching_sessions(id), idx integer not null default 0, role text not null default 'employee', text text not null default '', interrupted boolean not null default false, audio_ms integer not null default 0, created_at timestamp default now());
+CREATE TABLE IF NOT EXISTS google_integrations (id uuid primary key default gen_random_uuid(), org_id uuid not null unique references orgs(id), email text not null default '', access_enc text not null default '', refresh_enc text not null default '', expires_at timestamp, created_at timestamp default now());
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS transport text not null default 'meet';
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS meet_space_name text not null default '';
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS meet_url text not null default '';
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS status text not null default 'waiting_for_employee';
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS started_at timestamp;
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS ended_at timestamp;
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS bot_error text not null default '';
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS tts_chars integer not null default 0;
+CREATE INDEX IF NOT EXISTS turns_session ON coaching_turns (session_id, idx);
 CREATE INDEX IF NOT EXISTS crit_call ON criterion_results (call_id);
 `;
 export async function ensureSchema() { await pool.query(DDL); }

@@ -116,6 +116,35 @@ export const coachingSessions = pgTable("coaching_sessions", {
   actionItems: jsonb("action_items").$type<string[]>().notNull().default([]),
   humanFlag: boolean("human_flag").notNull().default(false),
   token: text("token").notNull().default(""),
+  transport: text("transport").notNull().default("meet"),
+  meetSpaceName: text("meet_space_name").notNull().default(""),
+  meetUrl: text("meet_url").notNull().default(""),
+  status: text("status").notNull().default("waiting_for_employee"),
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
+  botError: text("bot_error").notNull().default(""),
+  ttsChars: integer("tts_chars").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const coachingTurns = pgTable("coaching_turns", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id").notNull().references(() => coachingSessions.id),
+  idx: integer("idx").notNull().default(0),
+  role: text("role").notNull().default("employee"),
+  text: text("text").notNull().default(""),
+  interrupted: boolean("interrupted").notNull().default(false),
+  audioMs: integer("audio_ms").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const googleIntegrations = pgTable("google_integrations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orgId: uuid("org_id").notNull().references(() => orgs.id).unique(),
+  email: text("email").notNull().default(""),
+  accessEnc: text("access_enc").notNull().default(""),
+  refreshEnc: text("refresh_enc").notNull().default(""),
+  expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -35,6 +35,7 @@ export function Coach() {
         {mock && <Pill tone="amber">mock Aro — no API key</Pill>}
       </div>
       <p className="text-xs text-gray-500">English only for now. AI coach, recorded &amp; summarized. Safety: the coach never makes employment decisions.</p>
+      <p className="text-[11px] text-gray-400">Browser fallback mode — if a Meet link was created, prefer the Coaching room (<code>/coach-room/{id}</code>) for the live transcript.</p>
       <Card className="p-4">
         <div className="mb-3 flex items-center gap-2">
           <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full"><img src="/icon.png" alt="Aro" className="h-10 w-10 animate-pulse object-cover" /></div>

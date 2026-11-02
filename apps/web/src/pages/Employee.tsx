@@ -170,24 +170,28 @@ export function CoachDialog({ employeeId, employeeName, onClose }: { employeeId:
   const [, nav] = useLocation();
   const [topics, setTopics] = useState("");
   const [memoId, setMemoId] = useState("");
+  const [meetLink, setMeetLink] = useState("");
   const { data: memos } = useQuery({ queryKey: ["memos", employeeId], queryFn: () => api(`/api/memos?employeeId=${employeeId}`) });
   const start = useMutation({
-    mutationFn: () => api("/api/coach", { method: "POST", body: JSON.stringify({ employeeId, memoId: memoId || undefined, topics }) }),
-    onSuccess: (r) => nav(`/coach/${r.id}?token=${r.token}`),
+    mutationFn: (manualMeetUrl?: string) => api("/api/coach", { method: "POST", body: JSON.stringify({ employeeId, memoId: memoId || undefined, topics, ...(manualMeetUrl ? { meetUrl: manualMeetUrl } : {}) }) }),
+    onSuccess: (r) => nav(`/coach-room/${r.id}?token=${r.token}`),
   });
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4">
       <div className="card w-full max-w-md p-5">
         <h2 className="text-sm font-bold text-gray-900">Start AI coaching — {employeeName}</h2>
+        <p className="mt-0.5 text-[11px] text-gray-500">Creates a Google Meet + AI coach joins as “Arocall AI Coach”. Falls back to browser mode.</p>
         <label className="mt-3 block text-[11px] font-semibold text-gray-500">Focus topics</label>
         <input className="input mt-1" placeholder="e.g. closing, empathy on billing calls" value={topics} onChange={(e) => setTopics(e.target.value)} />
         <label className="mt-2 block text-[11px] font-semibold text-gray-500">Attach memo (optional)</label>
         <select className="input mt-1" value={memoId} onChange={(e) => setMemoId(e.target.value)}>
           <option value="">none</option>{((memos as any[]) || []).map((m: any) => <option key={m.id} value={m.id}>{m.content?.employee} · {m.content?.period}</option>)}
         </select>
+        <label className="mt-2 block text-[11px] font-semibold text-gray-500">Meet link override (optional — when Google isn’t connected)</label>
+        <input className="input mt-1" placeholder="https://meet.google.com/…" value={meetLink} onChange={(e) => setMeetLink(e.target.value)} />
         <div className="mt-4 flex justify-end gap-2">
           <button className="btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={() => start.mutate()}><Mic className="h-3.5 w-3.5" /> Start session</button>
+          <button className="btn" onClick={() => start.mutate(meetLink || undefined)}><Mic className="h-3.5 w-3.5" /> Start session</button>
         </div>
       </div>
     </div>
@@ -404,13 +408,14 @@ export function EmployeeProfile() {
           <Card className="lg:col-span-3">
             <CardHeader title="Score trend" sub={`${rangeHint} — hover a point, click to open the call`} />
             <div className="p-4"><LineChart
+              color="#4f39f6"
               points={data.trend}
               hint={(p) => `${new Date(p.t).toLocaleString()} — score ${p.score} (click to open call)`}
               onPointClick={(p) => p.id && nav(`/calls/${p.id}`)} /></div>
           </Card>
           <Card className="lg:col-span-2">
             <CardHeader title="Criteria breakdown" sub={`average per criterion, ${rangeHint}`} />
-            <div className="p-4"><HBars bars={(data.breakdown || []).map((b: any) => ({
+            <div className="p-4"><HBars color="#4f39f6" bars={(data.breakdown || []).map((b: any) => ({
               label: b.name, value: b.avg,
               hint: `${b.name}: avg ${b.avg} across ${b.count} call(s)`,
             }))} /></div>

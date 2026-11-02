@@ -15,6 +15,7 @@ import { Coaching } from "./pages/Coaching";
 import { Guidelines, GuidelineDoc } from "./pages/Guidelines";
 import { Settings, AcceptInvite } from "./pages/Settings";
 import { Coach } from "./pages/Misc";
+import { CoachingRoom } from "./pages/CoachingRoom";
 
 const qc = new QueryClient();
 function Shell() {
@@ -32,6 +33,7 @@ function App() {
         <Route path="/login"><Login /></Route>
         <Route path="/accept-invite"><AcceptInvite /></Route>
         <Route path="/coach/:id"><Coach /></Route>
+        <Route path="/coach-room/:id"><CoachingRoom /></Route>
         <Route>
           {authed ? (
             <AppLayout onHelp={helpFn}>

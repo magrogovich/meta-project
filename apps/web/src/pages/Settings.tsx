@@ -11,8 +11,13 @@ export function Settings() {
   const qc = useQueryClient();
   const { role } = useAuth();
   const isAdmin = role !== "evaluator";
-  const [tab, setTab] = useState("Organization");
-  const tabs = ["Organization", "Team", "Departments", "Quality targets", "Coaching rules", "Retention", "Audit log"];
+  const googleStatus = new URLSearchParams(location.search).get("google");
+  const [tab, setTab] = useState(googleStatus ? "Integrations" : "Organization");
+  if (googleStatus) {
+    qc.invalidateQueries({ queryKey: ["google-int"] });
+    history.replaceState(null, "", "/settings");
+  }
+  const tabs = ["Organization", "Team", "Departments", "Quality targets", "Coaching rules", "Integrations", "Retention", "Audit log"];
   return (
     <div className="w-full space-y-4">
       <h1 className="text-lg font-bold tracking-tight text-gray-900">Settings</h1>
@@ -26,6 +31,7 @@ export function Settings() {
       {tab === "Departments" && <DeptTab isAdmin={isAdmin} />}
       {tab === "Quality targets" && <QualityTab isAdmin={isAdmin} />}
       {tab === "Coaching rules" && <RulesTab isAdmin={isAdmin} />}
+      {tab === "Integrations" && <IntegrationsTab isAdmin={isAdmin} justConnected={googleStatus === "connected"} justFailed={googleStatus === "error"} />}
       {tab === "Retention" && <RetentionTab isAdmin={isAdmin} />}
       {tab === "Audit log" && <AuditTab />}
     </div>
@@ -240,6 +246,35 @@ function RetentionTab({ isAdmin }: { isAdmin: boolean }) {
         </div>
       )}
       <p className="text-[11px] text-gray-400">To wipe one person entirely, delete them from the Employees page (removes calls, reports, memos, sessions, keys).</p>
+    </Card>
+  );
+}
+
+function IntegrationsTab({ isAdmin, justConnected, justFailed }: { isAdmin: boolean; justConnected?: boolean; justFailed?: boolean }) {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["google-int"], queryFn: () => api("/api/settings/integrations/google") });
+  const connect = async () => {
+    const r = await api("/api/settings/integrations/google/url");
+    location.href = r.url;
+  };
+  const disc = useMutation({
+    mutationFn: () => api("/api/settings/integrations/google/disconnect", { method: "POST", body: JSON.stringify({}) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["google-int"] }),
+  });
+  return (
+    <Card className="space-y-3 p-4">
+      <p className="text-xs font-semibold text-gray-900">Google — Meet space creation</p>
+      <p className="text-[11px] text-gray-500">Connect an admin Google account to auto-create Meet spaces (OPEN access). Without it, paste a Meet link manually when starting a session.</p>
+      {justConnected && <p className="rounded-md bg-emerald-50 p-2 text-xs text-emerald-700 ring-1 ring-emerald-200">Google connected — new coaching sessions will auto-create Meet links.</p>}
+      {justFailed && <p className="rounded-md bg-red-50 p-2 text-xs text-red-700 ring-1 ring-red-200">Google connect failed — try again.</p>}
+      {data?.connected ? (
+        <div className="flex items-center gap-2 text-xs">
+          <Pill tone="green">connected{data.email ? ` · ${data.email}` : ""}</Pill>
+          {isAdmin && <button className="btn-outline" onClick={() => disc.mutate()}>Disconnect</button>}
+        </div>
+      ) : (
+        <div>{isAdmin && <button className="btn" onClick={connect}>Connect Google account</button>}</div>
+      )}
     </Card>
   );
 }

@@ -213,7 +213,7 @@ await db.insert(s.coachingSessions).values({
   orgId, employeeId: empRows[1].id, topics: "Compliance drift + empathy",
   transcript: [{ role: "employee", text: "I feel the targets are unfair.", at: new Date().toISOString() }],
   summary: "Employee raised fairness concerns.", actionItems: ["Review verification script"],
-  humanFlag: true, token: "cs_seedflag1",
+  humanFlag: true, token: "cs_seedflag1", transport: "meet", status: "ended",
 });
 console.log(`seed done: 5 employees x ${CALLS_PER} calls = ${5 * CALLS_PER} + 2 failed; complianceFails=${complianceFails}, supervisor=${supervisorCount}`);
 for (let i = 0; i < empRows.length; i++) {

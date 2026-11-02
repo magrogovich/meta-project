@@ -5,6 +5,26 @@ import * as s from "../db/schema.js";
 import { authMw } from "./auth.js";
 
 export const settingsRouter = Router();
+// Public OAuth callback must precede auth middleware (Google redirects without a bearer token).
+// On success/error redirect back to the SPA (not JSON) so the admin lands on Settings.
+settingsRouter.get("/integrations/google/callback-public", async (req: any, res) => {
+  const { code, state } = req.query as any;
+  const front = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
+  const back = (q: string) => res.redirect(`${front}/settings?google=${q}`);
+  if (!code || !state) return back("error");
+  try {
+    const { exchangeCode } = await import("../lib/meet.js");
+    const { encryptKey } = await import("../lib/keys.js");
+    const t = await exchangeCode(String(code));
+    const vals = { orgId: String(state), email: t.email, accessEnc: encryptKey(t.access), refreshEnc: encryptKey(t.refresh), expiresAt: new Date(t.expiresAt) };
+    const ex = await db.select().from(s.googleIntegrations).where(eq(s.googleIntegrations.orgId, String(state)));
+    if (ex.length) await db.update(s.googleIntegrations).set(vals).where(eq(s.googleIntegrations.orgId, String(state)));
+    else await db.insert(s.googleIntegrations).values(vals);
+    return back("connected");
+  } catch (e: any) {
+    return back("error");
+  }
+});
 settingsRouter.use(authMw);
 const isAdmin = (req: any) => req.user.role === "admin";
 
@@ -56,6 +76,26 @@ settingsRouter.delete("/team/:id", async (req: any, res) => {
     return res.status(400).json({ error: "cannot remove the last admin" });
   await db.delete(s.users).where(and(eq(s.users.id, req.params.id), eq(s.users.orgId, req.user.orgId)));
   res.json({ ok: true });
+});
+
+// ---- google integrations (Meet space creation, org-scoped, tokens encrypted) ----
+settingsRouter.get("/integrations/google", async (req: any, res) => {
+  const rows = await db.select().from(s.googleIntegrations).where(eq(s.googleIntegrations.orgId, req.user.orgId));
+  const r: any = rows[0];
+  res.json({ connected: !!r, email: r?.email || "", expiresAt: r?.expiresAt || null });
+});
+settingsRouter.get("/integrations/google/url", async (req: any, res) => {
+  const { googleOAuthUrl } = await import("../lib/meet.js");
+  res.json({ url: googleOAuthUrl(req.user.orgId) });
+});
+settingsRouter.post("/integrations/google/disconnect", async (req: any, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "admins only" });
+  await db.delete(s.googleIntegrations).where(eq(s.googleIntegrations.orgId, req.user.orgId));
+  res.json({ ok: true });
+});
+// OAuth callback (public, state=orgId). Stores encrypted tokens.
+settingsRouter.get("/integrations/google/callback", async (_req: any, res) => {
+  res.json({ ok: true, hint: "use callback-public with ?code=&state=" });
 });
 
 // ---- audit log ----

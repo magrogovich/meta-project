@@ -72,44 +72,77 @@ export function TrendChart({ points, target, height = 220, weekly }: { points: {
   const H = height;
   if (points.length < 3)
     return <div ref={ref} style={{ height: H }} className="grid w-full place-items-center p-4 text-center text-xs text-gray-500">Not enough data yet — need at least 3 {weekly ? "weeks" : "days"} with analyzed calls.</div>;
+  const INDIGO = "#4f39f6";
+  const LAVENDER = "#c7d2fe";
+  const GOLD = "#c8a45c";
+  const GREEN = "#22c55e";
+  const RED = "#ef4444";
+  const GRID = "#e5e7eb";
+  const MUTED = "#94a3b8";
+  const gid = `trendfill-${Math.round(W)}-${points.length}`;
+  const cid = `trendclip-${Math.round(W)}-${points.length}`;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const trendingUp = (last?.score ?? 0) >= (first?.score ?? 0);
+  const LINE = trendingUp ? GREEN : RED;
   const w = W, h = H, padL = 34, padR = 12, padT = 12, padB = 26;
   const maxCount = Math.max(1, ...points.map((p) => p.count));
   const xs = (i: number) => padL + (i / Math.max(1, points.length - 1)) * (w - padL - padR);
   const ys = (s: number) => padT + (1 - Math.max(0, Math.min(100, s)) / 100) * (h - padT - padB);
+  const base = h - padB;
   const bw = Math.max(4, (w - padL - padR) / points.length - 5);
   const line = points.map((p, i) => `${xs(i)},${ys(p.score ?? 0)}`).join(" ");
+  const area = `M${xs(0)},${base} L${points.map((p, i) => `${xs(i)},${ys(p.score ?? 0)}`).join(" L")} L${xs(points.length - 1)},${base} Z`;
   return (
     <div ref={ref} style={{ height: H }} className="w-full">
       <svg viewBox={`0 0 ${w} ${h}`} style={{ height: H, width: "100%" }} preserveAspectRatio="none" role="img">
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={LINE} stopOpacity="0.2" />
+            <stop offset="100%" stopColor={LINE} stopOpacity="0" />
+          </linearGradient>
+          <clipPath id={cid}>
+            <rect x={xs(0)} y={0} width={Math.max(0, xs(points.length - 1) - xs(0))} height={h} />
+          </clipPath>
+        </defs>
         {[0, 25, 50, 75, 100].map((g) => (
           <g key={g}>
-            <line x1={padL} x2={w - padR} y1={ys(g)} y2={ys(g)} stroke={g === 0 ? "#cbd5e1" : "#e5e7eb"} strokeWidth="1" />
-            <text x={padL - 5} y={ys(g) + 4} textAnchor="end" fontSize="11" fill="#94a3b8">{g}</text>
+            <line x1={padL} x2={w - padR} y1={ys(g)} y2={ys(g)} stroke={GRID} strokeWidth="1" />
+            <text x={padL - 5} y={ys(g) + 4} textAnchor="end" fontSize="11" fill={MUTED}>{g}</text>
           </g>
         ))}
+        <g clipPath={`url(#${cid})`}>
+          {points.map((p, i) => {
+            const bh = ((p.count / maxCount) * (h - padT - padB)) / 3;
+            return (
+              <rect key={i} x={xs(i) - bw / 2} y={base - bh} width={bw} height={bh}
+                rx={Math.min(3, bw / 2)} fill={LAVENDER} opacity={0.55}>
+                <title>{`${new Date(p.t).toLocaleDateString()} — avg ${p.score} across ${p.count} call(s)`}</title>
+              </rect>
+            );
+          })}
+        </g>
+        <path d={area} fill={`url(#${gid})`} />
+        <line x1={padL} x2={w - padR} y1={ys(target)} y2={ys(target)} stroke={GOLD} strokeWidth="1" strokeDasharray="5 4" />
+        <text x={w - padR} y={ys(target) - 5} textAnchor="end" fontSize="11" fill="#374151" fontWeight="600">target {target}</text>
+        <polyline points={line} fill="none" stroke={LINE} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {points.map((p, i) => {
-          const bh = ((p.count / maxCount) * (h - padT - padB)) / 3;
+          const isLast = i === points.length - 1;
+          const r = isLast ? 6 : 4;
+          const fill = isLast ? INDIGO : LINE;
           return (
-            <rect key={i} x={xs(i) - bw / 2} y={h - padB - bh} width={bw} height={bh} fill="#14b8a6" opacity={0.15}>
-              <title>{`${new Date(p.t).toLocaleDateString()} — avg ${p.score} across ${p.count} call(s)`}</title>
-            </rect>
+            <g key={i}>
+              <circle cx={xs(i)} cy={ys(p.score ?? 0)} r={r} fill={fill} stroke="#fff" strokeWidth="2">
+                <title>{`${new Date(p.t).toLocaleDateString()} — avg ${p.score} across ${p.count} call(s)`}</title>
+              </circle>
+              {(i === 0 || i === points.length - 1 || i % Math.ceil(points.length / 6) === 0) && (
+                <text x={xs(i)} y={h - 8} textAnchor="middle" fontSize="11" fill={MUTED}>
+                  {new Date(p.t).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                </text>
+              )}
+            </g>
           );
         })}
-        <line x1={padL} x2={w - padR} y1={ys(target)} y2={ys(target)} stroke="#22c55e" strokeWidth="1.5" strokeDasharray="6 4" />
-        <text x={w - padR} y={ys(target) - 5} textAnchor="end" fontSize="11" fill="#22c55e" fontWeight="700">target {target}</text>
-        <polyline points={line} fill="none" stroke={TEAL} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-        {points.map((p, i) => (
-          <g key={i}>
-            <circle cx={xs(i)} cy={ys(p.score ?? 0)} r="4.5" fill={TEAL} stroke="#fff" strokeWidth="2">
-              <title>{`${new Date(p.t).toLocaleDateString()} — avg ${p.score} across ${p.count} call(s)`}</title>
-            </circle>
-            {(i === 0 || i === points.length - 1 || i % Math.ceil(points.length / 6) === 0) && (
-              <text x={xs(i)} y={h - 8} textAnchor="middle" fontSize="11" fill="#94a3b8">
-                {new Date(p.t).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-              </text>
-            )}
-          </g>
-        ))}
       </svg>
     </div>
   );

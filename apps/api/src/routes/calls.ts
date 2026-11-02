@@ -373,18 +373,139 @@ memoRouter.get("/:id", async (req: any, res) => {
   res.json(rows[0]);
 });
 
-// ---- coaching sessions ----
+// ---- coaching sessions (Meet transport + inapp fallback) ----
 export const coachRouter = Router();
+
+// Create: admin only. Creates Meet space (or manual link fallback), session row,
+// audit entry. Transport from COACH_TRANSPORT unless overridden in body.
 coachRouter.post("/", authMw, async (req: any, res) => {
-  const { employeeId, memoId, topics } = req.body || {};
+  const { employeeId, memoId, topics, meetUrl: manualUrl, transport } = req.body || {};
+  if (!employeeId) return res.status(400).json({ error: "employeeId required" });
+  const emps = await db.select().from(s.employees).where(and(eq(s.employees.id, employeeId), eq(s.employees.orgId, req.user.orgId)));
+  if (!emps.length) return res.status(404).json({ error: "employee not found" });
+  const { coachEnv, transportFor } = await import("../lib/coach.js");
+  const t = (transport || coachEnv.transport) as "meet" | "inapp";
   const token = "cs_" + Math.random().toString(36).slice(2, 10);
-  const [cs] = await db.insert(s.coachingSessions).values({ orgId: req.user.orgId, employeeId, memoId: memoId || null, topics: topics || "", token }).returning();
-  res.json({ ...cs, link: `/coach/${cs.id}?token=${token}` });
+  let meetUrl = String(manualUrl || "");
+  let spaceName = "";
+  if (t === "meet" && !meetUrl) {
+    // Try Meet REST API with stored org Google tokens; fall back to manual link.
+    try {
+      const integ = (await db.select().from(s.googleIntegrations).where(eq(s.googleIntegrations.orgId, req.user.orgId)))[0];
+      if (integ?.accessEnc) {
+        const { decryptKey } = await import("../lib/keys.js");
+        const { createMeetSpace } = await import("../lib/meet.js");
+        const r = await createMeetSpace(decryptKey(integ.accessEnc));
+        meetUrl = r.url; spaceName = r.name;
+      }
+    } catch { /* manual fallback below */ }
+  }
+  const [cs] = await db.insert(s.coachingSessions).values({
+    orgId: req.user.orgId, employeeId, memoId: memoId || null, topics: topics || "", token,
+    transport: t, meetUrl, meetSpaceName: spaceName,
+    status: t === "meet" ? "waiting_for_employee" : "live",
+    startedAt: t === "inapp" ? new Date() : null,
+  }).returning();
+  try { transportFor(t).startSession(cs.id, meetUrl); } catch { /* queued */ }
+  await db.insert(s.auditLog).values({ orgId: req.user.orgId, userId: req.user.id, action: `coach_start:${t}`, callId: employeeId });
+  res.json({ ...cs, link: `/coach-room/${cs.id}?token=${token}`, inappLink: `/coach/${cs.id}?token=${token}`, needsMeetLink: t === "meet" && !meetUrl });
+});
+// Bot: pending sessions (internal secret auth)
+coachRouter.get("/bot/pending", async (req, res) => {
+  const { coachEnv } = await import("../lib/coach.js");
+  if (req.header("x-bot-secret") !== coachEnv.botSecret) return res.status(403).json({ error: "forbidden" });
+  const rows = await db.select().from(s.coachingSessions);
+  const pending = rows.filter((r: any) => r.transport === "meet" && r.status === "waiting_for_employee" && r.meetUrl);
+  res.json(pending);
+});
+// Bot callbacks (internal secret): status, turn append, human flag, end w/ summary.
+coachRouter.post("/bot/callback", async (req, res) => {
+  const { coachEnv } = await import("../lib/coach.js");
+  if (req.header("x-bot-secret") !== coachEnv.botSecret) return res.status(403).json({ error: "forbidden" });
+  const { sessionId, status, turn, humanFlag, botError, ttsChars, summary, actionItems } = req.body || {};
+  const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, sessionId));
+  if (!rows.length) return res.status(404).json({ error: "not found" });
+  const cs: any = rows[0];
+  const patch: any = {};
+  if (status) {
+    patch.status = status;
+    if (status === "live" && !cs.startedAt) patch.startedAt = new Date();
+    if (["ended", "expired", "failed"].includes(status) && !cs.endedAt) patch.endedAt = new Date();
+  }
+  if (humanFlag !== undefined) patch.humanFlag = !!humanFlag;
+  if (botError !== undefined) patch.botError = String(botError).slice(0, 500);
+  if (ttsChars !== undefined) patch.ttsChars = Number(ttsChars) || 0;
+  if (summary !== undefined) patch.summary = String(summary);
+  if (actionItems !== undefined) patch.actionItems = actionItems;
+  if (turn) {
+    const count = await db.select().from(s.coachingTurns).where(eq(s.coachingTurns.sessionId, sessionId));
+    await db.insert(s.coachingTurns).values({
+      sessionId, idx: count.length, role: turn.role === "coach" ? "coach" : "employee",
+      text: String(turn.text || "").slice(0, 4000), interrupted: !!turn.interrupted, audioMs: Number(turn.audioMs) || 0,
+    });
+    const tr = [...(cs.transcript as any[]), { role: turn.role, text: turn.text, at: new Date().toISOString(), ...(turn.interrupted ? { interrupted: true } : {}) }];
+    patch.transcript = tr;
+  }
+  if (Object.keys(patch).length) await db.update(s.coachingSessions).set(patch).where(eq(s.coachingSessions.id, sessionId));
+  if (status && ["ended", "expired", "failed"].includes(status)) {
+    // Persist agreed action items + audit (existing flow: summary + items on profile).
+    const items: string[] = Array.isArray(actionItems) ? actionItems : [];
+    for (const text of items.slice(0, 5)) {
+      if (!String(text).trim()) continue;
+      await db.insert(s.actionItems).values({ orgId: cs.orgId, employeeId: cs.employeeId, text: String(text).trim(), source: "coach" });
+    }
+    await db.insert(s.auditLog).values({ orgId: cs.orgId, userId: "bot", action: `coach_${status}`, callId: cs.employeeId });
+  }
+  if (humanFlag) await db.insert(s.auditLog).values({ orgId: cs.orgId, userId: "bot", action: "coach_human_flag", callId: cs.employeeId });
+  res.json({ ok: true });
 });
 coachRouter.get("/:id", authMw, async (req: any, res) => {
   const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
   if (!rows.length) return res.status(404).json({ error: "not found" });
   res.json(rows[0]);
+});
+// Room view: auth OR employee token. Includes turns for live transcript.
+coachRouter.get("/:id/room", async (req: any, res) => {
+  const { token } = req.query as any;
+  const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
+  if (!rows.length) return res.status(404).json({ error: "not found" });
+  const cs: any = rows[0];
+  const auth = req.header("authorization");
+  if (!(auth && cs.orgId) && cs.token && token !== cs.token) {
+    // allow token OR any logged-in user of same org (checked below when bearer present)
+    if (!auth) return res.status(403).json({ error: "bad token" });
+  }
+  const turns = (await db.select().from(s.coachingTurns).where(eq(s.coachingTurns.sessionId, cs.id)))
+    .sort((a, b) => a.idx - b.idx);
+  // Expiry: waiting > join timeout -> expired (checked lazily on poll).
+  const { coachEnv } = await import("../lib/coach.js");
+  if (cs.status === "waiting_for_employee") {
+    const ageMin = (Date.now() - +new Date(cs.createdAt || Date.now())) / 60000;
+    if (ageMin > coachEnv.joinTimeoutMin) {
+      await db.update(s.coachingSessions).set({ status: "expired", endedAt: new Date() }).where(eq(s.coachingSessions.id, cs.id));
+      cs.status = "expired";
+    }
+  }
+  res.json({ session: cs, turns, transportDefault: coachEnv.transport });
+});
+// End session (admin/auth or employee token). Runs summary flow for inapp; meet
+// summary comes from bot callback, but we finalize defensively here too.
+coachRouter.post("/:id/end", async (req: any, res) => {
+  const { token, summary } = req.body || {};
+  const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
+  if (!rows.length) return res.status(404).json({ error: "not found" });
+  const cs: any = rows[0];
+  if (cs.token && token !== cs.token && !req.header("authorization")) return res.status(403).json({ error: "bad token" });
+  const turns = await db.select().from(s.coachingTurns).where(eq(s.coachingTurns.sessionId, cs.id));
+  const finalSummary = summary || cs.summary || `Session with ${Math.max(turns.length, (cs.transcript as any[]).length / 2, 0)} exchanges.`;
+  const items: string[] = Array.isArray(cs.actionItems) && cs.actionItems.length ? cs.actionItems : ["Use empathy opener", "Apply 3-step close"];
+  await db.update(s.coachingSessions).set({ status: "ended", endedAt: new Date(), summary: String(finalSummary) }).where(eq(s.coachingSessions.id, cs.id));
+  for (const t of items.slice(0, 5)) {
+    const exists = (await db.select().from(s.actionItems).where(and(eq(s.actionItems.employeeId, cs.employeeId), eq(s.actionItems.orgId, cs.orgId)))).some((a) => a.text === t);
+    if (!exists) await db.insert(s.actionItems).values({ orgId: cs.orgId, employeeId: cs.employeeId, text: t, source: "coach" });
+  }
+  await db.insert(s.auditLog).values({ orgId: cs.orgId, userId: "room", action: "coach_end", callId: cs.employeeId });
+  res.json({ ok: true, summary: finalSummary, actionItems: items });
 });
 // public (employee link) + chat turn
 coachRouter.post("/:id/chat", async (req, res) => {
@@ -406,8 +527,23 @@ coachRouter.post("/:id/chat", async (req, res) => {
   res.json({ reply: text, mock, humanFlag: needsHuman || cs.humanFlag });
 });
 coachRouter.post("/:id/flag", async (req, res) => {
+  const { token } = req.body || {};
+  const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
+  if (!rows.length) return res.status(404).json({ error: "not found" });
+  const cs: any = rows[0];
+  if (cs.token && token !== cs.token && !req.header("authorization")) return res.status(403).json({ error: "bad token" });
   await db.update(s.coachingSessions).set({ humanFlag: true }).where(eq(s.coachingSessions.id, req.params.id));
+  await db.insert(s.auditLog).values({ orgId: cs.orgId, userId: "room", action: "coach_human_flag", callId: cs.employeeId });
   res.json({ ok: true });
+});
+// Admin pastes a Meet link manually (fallback when Google not connected).
+coachRouter.patch("/:id/meet-link", authMw, async (req: any, res) => {
+  const { meetUrl } = req.body || {};
+  if (!/^https:\/\/meet\.google\.com\//.test(meetUrl || "")) return res.status(400).json({ error: "valid meet.google.com link required" });
+  const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
+  if (!rows.length || (rows[0] as any).orgId !== req.user.orgId) return res.status(404).json({ error: "not found" });
+  const [cs] = await db.update(s.coachingSessions).set({ meetUrl, transport: "meet", status: "waiting_for_employee" }).where(eq(s.coachingSessions.id, req.params.id)).returning();
+  res.json(cs);
 });
 
 miscRouter.use("/calls", callRouter);

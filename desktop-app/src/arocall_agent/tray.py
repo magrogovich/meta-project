@@ -6,11 +6,11 @@ log = logging.getLogger("arocall.tray")
 
 # status -> (color, text)
 STATUSES = {
-    "unconfigured": ("gray", "Not configured — open Settings and paste a session key"),
+    "unconfigured": ("gray", "Not configured - open Settings and paste a session key"),
     "idle": ("green", "Connected"),
     "recording": ("red", "Recording call"),
     "uploading": ("orange", "Uploading"),
-    "error": ("red", "Error — see logs"),
+    "error": ("red", "Error - see logs"),
 }
 
 _state = {"status": "unconfigured", "detail": ""}
@@ -31,7 +31,7 @@ def set_status(status: str, detail: str = ""):
 
 def tooltip() -> str:
     color, text = STATUSES.get(_state["status"], STATUSES["error"])
-    d = f" — {_state['detail']}" if _state["detail"] else ""
+    d = f" - {_state['detail']}" if _state["detail"] else ""
     return f"Arocall agent: {text}{d}"
 
 

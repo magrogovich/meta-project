@@ -165,11 +165,160 @@ def ensure_app_sink(sink: str = APP_SINK, loopback_sink: str | None = None) -> N
         log.warning("app loopback unavailable (%s): the routed app may be silent on the speakers", e)
 
 
+def _tokens(text: str) -> set:
+    import re
+    return {t for t in re.split(r"[^a-z0-9]+", (text or "").lower()) if len(t) >= 3}
+
+
 def _matches(app: dict, match: str) -> bool:
     m = (match or "").strip().lower()
     if not m:
         return False
-    return m in (app.get("app") or "").lower() or m in (app.get("binary") or "").lower()
+    live = ((app.get("app") or "") + " " + (app.get("binary") or "")).lower()
+    if m in live:
+        return True
+    # The installed binary is often longer than the runtime one
+    # (e.g. "brave-browser-stable" vs "brave"): a shared token still matches.
+    return bool(_tokens(m) & _tokens(live))
+
+
+def live_binary_for(installed: dict, live: list) -> str:
+    """Ground-truth runtime binary for an installed app, or "" when not playing.
+
+    Prefer the observed sink-input identity over the Exec-derived guess, so a
+    pick made while the app plays sound keeps working even when the two differ.
+    """
+    for s in live:
+        if _matches(s, installed.get("binary") or "") or _matches(s, installed.get("name") or ""):
+            return (s.get("binary") or s.get("app") or "").strip()
+    return ""
+
+
+# ---- installed apps (XDG desktop database) ------------------------------
+# Names typed by hand are fragile (typos, wrong binary), so the picker offers
+# the system's installed apps and stores the OS-derived binary. Runtime
+# matching still uses _matches() against live sink-inputs.
+
+def _desktop_dirs() -> list:
+    import os
+    from pathlib import Path
+
+    dirs = [Path.home() / ".local" / "share" / "applications"]
+    for base in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":"):
+        if base.strip():
+            dirs.append(Path(base.strip()) / "applications")
+    return [d for d in dirs if d.is_dir()]
+
+
+def _exec_binary(exec_line: str) -> str:
+    """Best-effort binary for a .desktop Exec line (no typing involved)."""
+    import os
+    import shlex
+
+    try:
+        tokens = shlex.split(exec_line, posix=True)
+    except ValueError:
+        tokens = exec_line.split()
+    # drop freedesktop field codes (%f %F %u %U %d %D %n %N %i %c %k %v %m)
+    tokens = [t for t in tokens if not (t.startswith("%") and len(t) == 2)]
+    # drop a leading `env` with VAR= assignments
+    while tokens and (tokens[0] == "env" or "=" in tokens[0]):
+        tokens.pop(0)
+    if not tokens:
+        return ""
+    if os.path.basename(tokens[0]) == "flatpak":
+        rest = [t for t in tokens[1:] if t != "run" and not t.startswith("-")]
+        if rest:
+            return rest[0].split(".")[-1].lower()
+        return ""
+    return os.path.basename(tokens[0]).lower()
+
+
+def _parse_desktop_file(path) -> dict | None:
+    import configparser
+
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.optionxform = str
+    try:
+        cp.read(path, encoding="utf-8")
+    except (configparser.Error, OSError):
+        return None
+    if "Desktop Entry" not in cp:
+        return None
+    e = cp["Desktop Entry"]
+    if e.get("Type", "Application") != "Application":
+        return None
+    if e.get("NoDisplay", "false").lower() == "true" or e.get("Hidden", "false").lower() == "true":
+        return None
+    exec_line = (e.get("Exec") or "").strip()
+    name = (e.get("Name") or "").strip()
+    if not exec_line or not name:
+        return None
+    binary = _exec_binary(exec_line)
+    if not binary:
+        return None
+    return {"name": name, "binary": binary, "exec": exec_line,
+            "icon": (e.get("Icon") or "").strip(), "desktop_id": path.name}
+
+
+def list_installed_apps() -> list:
+    """Installed GUI apps: [{name, binary, icon, playing}]. No audio tools needed.
+
+    `playing` marks apps with a live audio stream right now (needs pactl;
+    False for all when the sound server is unreachable).
+    """
+    seen, apps = set(), []
+    for d in _desktop_dirs():
+        try:
+            files = sorted(d.glob("*.desktop"))
+        except OSError:
+            continue
+        for f in files:
+            if f.name in seen:
+                continue
+            seen.add(f.name)
+            parsed = _parse_desktop_file(f)
+            if parsed:
+                apps.append(parsed)
+    try:
+        live = list_apps()
+    except RuntimeError:
+        live = []
+    for a in apps:
+        a["live_binary"] = live_binary_for(a, live)
+        a["playing"] = bool(a["live_binary"])
+    apps.sort(key=lambda a: (not a["playing"], a["name"].lower()))
+    return apps
+
+
+def describe_live_apps() -> list:
+    """Short labels of streams playing right now (for logs/UI).
+
+    Nameless streams (no application.name/binary) are labeled with their
+    index and media name instead of a bare "unknown", so a mismatch can
+    actually be diagnosed.
+    """
+    try:
+        live = list_apps()
+    except RuntimeError:
+        return []
+    out = []
+    for s in live:
+        name = (s.get("app") or "").strip()
+        binary = (s.get("binary") or "").strip()
+        media = (s.get("media") or "").strip()
+        if name and binary.lower() != name.lower():
+            out.append(f"{name} ({binary})")
+        elif name:
+            out.append(name)
+        else:
+            out.append(f"stream #{s.get('index')}" + (f" [{media}]" if media else " [no name]"))
+    return out
+
+
+# Last (match, live-set) that produced a no-match warning, per sink: the
+# re-route loop runs every 2 s, so only warn when something actually changed.
+_nowarn_cache: dict = {}
 
 
 def route_app_audio(match: str, sink: str = APP_SINK) -> int:
@@ -193,6 +342,15 @@ def route_app_audio(match: str, sink: str = APP_SINK) -> int:
             moved += 1
         except RuntimeError as e:
             log.warning("could not route %s to %s: %s", app.get("app"), sink, e)
+    if moved == 0:
+        live = describe_live_apps()
+        sig = (match.strip().lower(), tuple(live))
+        if _nowarn_cache.get(sink) != sig:
+            _nowarn_cache[sink] = sig
+            log.warning("no audio streams matched %r%s", match,
+                        f" — playing right now: {', '.join(live)}" if live else " — nothing is playing right now")
+    else:
+        _nowarn_cache.pop(sink, None)  # a future mismatch warns again
     return moved
 
 

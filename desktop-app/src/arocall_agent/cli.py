@@ -98,21 +98,29 @@ def _setup_audio_source(cfg: dict):
         print("Capturing entire system sound.")
         return
     print("Only apps playing sound right now can be listed — start a call or play audio in the app first.")
+    try:
+        installed = mod.list_installed_apps()
+    except (RuntimeError, OSError) as e:
+        print(f"Could not read installed apps ({e}) — type the app name manually.")
+        installed = []
     match = ""
     while not match:
-        try:
-            apps = mod.list_apps()
-        except RuntimeError as e:
-            print(f"Could not list apps ({e}).")
-            apps = []
-        if apps:
-            print("Apps currently playing sound:")
-            for i, a in enumerate(apps, 1):
-                name = a.get("app") or a.get("binary") or "unknown"
-                media = f" ({a['media']})" if a.get("media") else ""
-                print(f"  [{i}] {name}{media}")
+        filt = input("Type to search your installed apps (Enter = show all): ").strip().lower()
+        if filt:
+            cands = [a for a in installed
+                     if filt in a["name"].lower() or filt in a["binary"].lower()]
         else:
-            print("No apps are playing sound right now.")
+            cands = list(installed)
+        if not cands and installed:
+            print(f"No installed app matches '{filt}'. Try another search.")
+            continue
+        if cands:
+            print(f"Installed apps{f' matching {filt!r}' if filt else ''}:")
+            for i, a in enumerate(cands, 1):
+                mark = "  ▶ playing now" if a["playing"] else ""
+                print(f"  [{i}] {a['name']}{mark}")
+        else:
+            print("No installed apps found.")
             print("  Tip: play audio in the app, then rescan. To see exact names yourself, run")
             print("  this while the app plays sound:")
             print("    pactl list sink-inputs | grep -E 'application.name|application.process.binary'")
@@ -120,15 +128,23 @@ def _setup_audio_source(cfg: dict):
         if not raw:
             break
         if raw.lower() in ("r", "refresh", "rescan"):
+            try:
+                installed = mod.list_installed_apps()
+            except (RuntimeError, OSError) as e:
+                print(f"Could not read installed apps ({e}).")
             continue
-        if raw.isdigit() and apps and 1 <= int(raw) <= len(apps):
-            a = apps[int(raw) - 1]
-            match = (a.get("binary") or a.get("app") or "").strip()
+        if raw.isdigit() and cands and 1 <= int(raw) <= len(cands):
+            picked = cands[int(raw) - 1]
+            # Prefer the observed runtime name (ground truth) over the
+            # Exec-derived guess — they differ for apps like Brave.
+            match = (picked.get("live_binary") or picked["binary"]).strip()
+            if picked.get("live_binary") and picked["live_binary"].lower() != picked["binary"].lower():
+                print(f"Found it playing as '{picked['live_binary']}' — using that.")
             if not match:
                 print("That entry has no usable name — type the app name manually.")
                 continue
         elif raw.isdigit():
-            print(f"No app #{raw} — pick 1-{len(apps)}, type a name, or rescan.")
+            print(f"No app #{raw} — pick 1-{len(cands)}, type a name, or rescan.")
             continue
         else:
             match = raw
@@ -235,14 +251,19 @@ def cmd_monitor(_args):
         print("ERROR: webrtcvad is not installed — run `pip install webrtcvad-wheels`, then retry.")
         return 1
     monitor_source = cfg["monitor_source"]
-    if cfg.get("capture_mode") == "app" and (cfg.get("target_app") or "").strip():
+    target = (cfg.get("target_app") or "").strip()
+    if cfg.get("capture_mode") == "app" and target:
         try:
-            from .audio_linux import APP_SINK, app_monitor_source, route_app_audio
+            from .audio_linux import APP_SINK, app_monitor_source, route_app_audio, describe_live_apps
             sink = cfg.get("app_sink") or APP_SINK
             route_app_audio(cfg["target_app"], sink)
             monitor_source = app_monitor_source(sink)
+            live = describe_live_apps()
+            print(f"target app: '{target}' — playing right now: {', '.join(live) if live else '(nothing)'}")
         except RuntimeError as e:
             print(f"Note: app routing failed ({e}) — watching system sound instead.")
+    else:
+        print("mode: entire system sound.")
     sm = CallStateMachine(
         aggressiveness=cfg["vad_aggressiveness"], buffer_s=cfg["buffer_s"],
         min_speech_ms=cfg["min_speech_ms"], end_silence_s=cfg["end_silence_s"],

@@ -157,17 +157,17 @@ def open_settings(on_key_saved=None):
 
     def current_apps():
         try:
-            return mod.list_apps()
+            return mod.list_installed_apps()
         except Exception:
             return []
 
     def app_match_of(a: dict) -> str:
-        return (a.get("binary") or a.get("app") or "").strip()
+        # Prefer the observed runtime name over the Exec-derived guess.
+        return ((a.get("live_binary") or a.get("binary")) or "").strip()
 
     def app_label_of(a: dict) -> str:
-        name = a.get("app") or a.get("binary") or "unknown app"
-        media = a.get("media") or ""
-        return f"{name} — {media}" if media else name
+        label = a.get("name") or a.get("binary") or "unknown app"
+        return f"{label}  ▶ playing" if a.get("playing") else label
 
     mode_var = tk.StringVar(value=cfg.get("capture_mode") or "system")
     target_var = tk.StringVar(value=cfg.get("target_app") or "")
@@ -186,7 +186,7 @@ def open_settings(on_key_saved=None):
     app_box.pack(side="left", fill="x", expand=True, padx=(6, 4))
     ttk.Button(app_row, text="Refresh",
                command=lambda: refresh_apps()).pack(side="left")
-    ttk.Label(au_tab, text="Pick a running app above (or type its name — e.g. the softphone or browser you take calls in). Only that app's sound is recorded.",
+    ttk.Label(au_tab, text="Pick one of your installed apps above (▶ = playing sound right now), or type a name. Only that app's sound is recorded.",
               wraplength=430).pack(padx=12, anchor="w")
 
     def refresh_apps():
@@ -201,8 +201,7 @@ def open_settings(on_key_saved=None):
             vals.append(app_label_of(a))
         app_box.config(values=vals)
         if not vals:
-            test_var.set("No apps are playing sound right now — play audio or start a call in the app, "
-                         "then press Refresh. You can also type the app name manually (while it plays "
+            test_var.set("No installed apps found — type the app name manually (while it plays "
                          "sound, run: pactl list sink-inputs | grep application.name).")
 
     def effective_monitor() -> str:

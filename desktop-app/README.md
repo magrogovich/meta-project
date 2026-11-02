@@ -58,7 +58,19 @@ it shows up), or type its name manually — matching is case-insensitive on
 the app name or process binary. If the list is empty, play audio in the app
 and rescan (terminal: answer `r`; Settings window: press Refresh).
 
-Finding the exact name: while the app plays sound, run
+Choosing from your installed apps (no typing needed): both `setup` /
+`arocall-agent audio` and Settings → Audio offer your system's installed
+apps (read from the XDG desktop database), with the ones playing sound right
+now marked `▶ playing`. Type to search a long list, pick the number, and the
+agent stores the OS-derived program name — so there is nothing to mistype.
+Typing a name by hand still works as a fallback. When you pick an app that
+is playing right now, the agent stores the name it actually observes on the
+sound server (e.g. `brave` even if the installed entry says
+`brave-browser-stable`) and tells you. At runtime a stream matches when the
+stored name appears in its app/binary name, or when they share a full word
+(so `brave-browser-stable` also matches a stream called `brave`).
+
+Finding the exact name yourself: while the app plays sound, run
 
 ```bash
 pactl list sink-inputs | grep -E 'application.name|application.process.binary'
@@ -150,6 +162,9 @@ Base: `AROCALL_BACKEND_URL` (default `http://localhost:4000`).
 | Symptom | Fix |
 |---|---|
 | `setup` never asks about the audio source | stale install — pull latest code, re-run `./install.sh`, check `status` shows 0.3.0+ |
+| App mode moves 0 streams / monitor shows sys always silent | the stored name doesn't match the live stream: run `arocall-agent monitor` (it prints the target and what's actually playing), then re-pick the app with `arocall-agent audio` while it plays sound so the observed name is stored |
+| Stopping the agent mid-call loses the call | fixed in 0.3.0+: shutdown finalizes whatever was recorded and queues the upload — upgrade with `./install.sh` |
+| Log shows nameless streams (`stream #N [media]`) | some apps expose no name to the sound server; match by what `monitor` prints, or switch to entire-system capture |
 | `ffmpeg is missing` | `sudo apt install ffmpeg` |
 | `missing audio tools` | `sudo apt install pulseaudio-utils` (or pipewire-pulse) |
 | No tray on GNOME | expected — use terminal commands (printed automatically) |

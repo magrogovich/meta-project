@@ -177,10 +177,22 @@ class Runner:
                 elif ev == "discarded":
                     drop_call(f"shorter than {self.cfg['min_call_s']} s after trimming")
         finally:
-            hb.stop()
-            queue.stop()
-            ms.stop()
-            ns.stop()
+            try:
+                # Stopping mid-call must not lose the recording: finalize
+                # what we have and hand it to the upload queue first.
+                if sm.state == "RECORDING":
+                    ev, payload = sm.flush()
+                    if ev == "ended":
+                        finish_call(payload, "agent stopping, uploaded what was recorded")
+                    elif ev == "discarded":
+                        drop_call("agent stopping, too short to keep")
+                elif sm.state == "FINISHING":
+                    sm.acknowledge()
+            finally:
+                hb.stop()
+                queue.stop()
+                ms.stop()
+                ns.stop()
 
     def _status(self):
         from . import config as app_config

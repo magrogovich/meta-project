@@ -25,10 +25,10 @@ function Kpi({ label, value, delta, tip, spark, sub, onClick }: {
   const up = delta.startsWith("+");
   const down = delta.startsWith("-");
   return (
-    <button onClick={onClick} title={tip} className="card p-4 text-left transition hover:ring-2 hover:ring-teal-200">
+    <button onClick={onClick} title={tip} className="card p-4 text-left transition hover:ring-2 hover:ring-[oklch(51.1%_.262_276.966)]">
       <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">{label}<MetricTip text={tip} /></div>
       <div className="mt-1 text-2xl font-bold tracking-tight text-gray-900">{value}</div>
-      <div className={`mt-0.5 text-xs font-semibold ${up ? "text-emerald-600" : down ? "text-red-600" : "text-gray-400"}`}>
+      <div className={`mt-0.5 text-xs font-semibold ${up ? "text-emerald-500" : down ? "text-red-500" : "text-gray-400"}`}>
         {delta === "—" || delta === "no change" ? delta : `${up ? "▲" : "▼"} ${delta} vs prev`}
       </div>
       {sub && <div className="mt-0.5 text-[11px] text-gray-500">{sub}</div>}
@@ -119,7 +119,7 @@ export function Dashboard() {
                         <div className="mb-1 flex items-baseline justify-between gap-2">
                           <span className="truncate text-xs font-medium text-gray-700">{c.name}</span>
                           <span className="shrink-0 text-xs text-gray-500">{c.rate == null ? "—" : `${c.rate}% · ${c.total} calls`}
-                            {c.delta != null && <span className={c.delta >= 0 ? "text-emerald-600" : "text-red-600"}> ({c.delta >= 0 ? "+" : ""}{c.delta})</span>}</span>
+                            {c.delta != null && <span className={c.delta >= 0 ? "text-emerald-500" : "text-red-500"}> ({c.delta >= 0 ? "+" : ""}{c.delta})</span>}</span>
                         </div>
                         <div className="h-2.5 overflow-hidden rounded-full bg-gray-100">
                           <div className="h-full rounded-full" style={{ width: `${c.rate ?? 0}%`, background: scoreColor(c.rate, rules.qaTarget, rules.passThreshold) }} />
@@ -151,25 +151,25 @@ export function Dashboard() {
                           const cell = r.cells[c.id];
                           if (!cell || cell.n === 0) return <td key={c.id} className="px-2 py-2 text-center text-gray-300">—</td>;
                           if (cell.low) return <td key={c.id} title={`${r.name} · ${c.name}: low data (${cell.n} calls)`}
-                            className="px-2 py-2 text-center"><span className="inline-block min-w-12 rounded bg-gray-100 px-2 py-1 text-gray-400">low</span></td>;
+                            className="px-2 py-2 text-center"><span className="inline-block w-14 rounded bg-gray-100 py-1 text-center text-gray-400">low</span></td>;
                           return (
                             <td key={c.id} className="px-2 py-2 text-center">
                               <button title={`${r.name} · ${c.name}: ${cell.rate}% pass (${cell.n} calls)`}
                                 onClick={() => nav(callsLink({ employeeId: r.id, failCrit: c.id }))}
-                                className="min-w-12 rounded px-2 py-1 font-bold text-white"
+                                className="inline-block w-14 rounded py-1 text-center font-bold text-white"
                                 style={{ background: scoreColor(cell.rate, rules.qaTarget, rules.passThreshold) }}>{cell.rate}%</button>
                             </td>
                           );
                         })}
                         <td className="px-2 py-2 text-right"><Pill tone={scoreTone(r.score, rules.qaTarget, rules.passThreshold)}>{r.score ?? "—"}</Pill></td>
-                        <td className="px-2 py-2 text-right font-bold text-gray-600">{r.delta == null ? "—" : <span className={r.delta >= 0 ? "text-emerald-600" : "text-red-600"}>{r.delta >= 0 ? `↗ +${r.delta}` : `↘ ${r.delta}`}</span>}</td>
+                        <td className="px-2 py-2 text-right font-bold text-gray-600">{r.delta == null ? "—" : <span className={r.delta >= 0 ? "text-emerald-500" : "text-red-500"}>{r.delta >= 0 ? `↗ +${r.delta}` : `↘ ${r.delta}`}</span>}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
                   <span>Pass rate:</span>
-                  <span className="inline-block h-3 w-8 rounded" style={{ background: "linear-gradient(90deg,#dc2626,#d97706,#16a34a)" }} />
+                  <span className="inline-block h-3 w-8 rounded" style={{ background: "linear-gradient(90deg,#ef4444,#f59e0b,#22c55e)" }} />
                   <span>red (below {rules.passThreshold}) → amber → green (≥ {rules.qaTarget})</span>
                 </div>
               </div>
@@ -197,7 +197,7 @@ export function Dashboard() {
                       <tr key={a.id} className="cursor-pointer hover:bg-gray-50" onClick={() => nav(`/employees/${a.id}`)}>
                         <td className="px-3 py-2.5 font-medium text-gray-900">{a.name}<span className="block text-[11px] font-normal text-gray-400">{a.department}</span></td>
                         <td className="px-3 py-2.5"><Pill tone={scoreTone(a.score, rules.qaTarget, rules.passThreshold)}>{a.score ?? "—"}</Pill></td>
-                        <td className={`px-3 py-2.5 font-semibold ${a.delta == null ? "text-gray-300" : a.delta >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        <td className={`px-3 py-2.5 font-semibold ${a.delta == null ? "text-gray-300" : a.delta >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                           {a.delta == null ? "—" : `${a.delta >= 0 ? "+" : ""}${a.delta}`}</td>
                         <td className="px-3 py-2.5 text-gray-600">{a.calls}</td>
                         <td className="px-3 py-2.5 text-gray-600">{a.critical}</td>
@@ -242,19 +242,6 @@ export function Dashboard() {
               </div>
             </Card>
           </div>
-
-          <Card>
-            <CardHeader title="Recent calls" sub="latest 5 — every number links to its calls"
-              right={<Link href={callsLink()} className="text-xs font-semibold text-indigo-700 hover:underline">View all</Link>} />
-            <ul className="divide-y divide-gray-100">
-              {(data.recent || []).map((c: any) => (
-                <li key={c.id}><Link href={`/calls/${c.id}`} className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50">
-                  <span className="flex-1 text-xs font-medium text-gray-800">{c.employeeName} · {new Date(c.startedAt).toLocaleString()}</span>
-                  <Pill tone={scoreTone(c.score, rules.qaTarget, rules.passThreshold)}>{c.score}</Pill>
-                </Link></li>
-              ))}
-            </ul>
-          </Card>
         </>
       )}
     </div>

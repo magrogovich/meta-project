@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactNode } from "react";
+import { Calendar } from "lucide-react";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`card ${className}`}>{children}</div>;
@@ -43,7 +44,7 @@ export function Pill({ tone, children }: { tone: "green" | "amber" | "red" | "gr
 export const scoreTone = (s: number | null, target = 80, pass = 70): "green" | "amber" | "red" => (s == null ? "gray" : s >= target ? "green" : s >= pass ? "amber" : "red");
 
 export const scoreColor = (s: number | null, target = 80, pass = 70) =>
-  s == null ? "#cbd5e1" : s >= target ? "#16a34a" : s >= pass ? "#d97706" : "#dc2626";
+  s == null ? "#cbd5e1" : s >= target ? "#22c55e" : s >= pass ? "#f59e0b" : "#ef4444";
 
 export function Skeleton({ className = "h-16" }: { className?: string }) {
   return <div className={`animate-pulse rounded-xl bg-gray-100 ${className}`} />;
@@ -65,23 +66,36 @@ export function EmptyState({ title, hint, action }: { title: string; hint: strin
 }
 
 // Plain-text date field (YYYY-MM-DD) — avoids the browser's mm/dd/yyyy placeholder.
+// The calendar icon opens the native date picker (invisible overlay input).
 export function DateField({ value, onChange, className = "input w-36" }: { value: string; onChange: (v: string) => void; className?: string }) {
   const [text, setText] = useState(value);
   const [bad, setBad] = useState(false);
   useEffect(() => { setText(value); setBad(false); }, [value]);
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(value) && !isNaN(Date.parse(value)) ? value : "";
   return (
-    <input
-      className={`${className} ${bad ? "!border-red-400" : ""}`}
-      placeholder="---- -- --"
-      inputMode="numeric"
-      value={text}
-      onChange={(e) => {
-        const v = e.target.value;
-        setText(v);
-        if (!v) { setBad(false); onChange(""); return; }
-        if (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v))) { setBad(false); onChange(v); }
-        else setBad(true);
-      }}
-    />
+    <div className="relative">
+      <input
+        className={`${className} pr-8 ${bad ? "!border-red-400" : ""}`}
+        placeholder="---- -- --"
+        inputMode="numeric"
+        value={text}
+        onChange={(e) => {
+          const v = e.target.value;
+          setText(v);
+          if (!v) { setBad(false); onChange(""); return; }
+          if (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v))) { setBad(false); onChange(v); }
+          else setBad(true);
+        }}
+      />
+      <Calendar className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+      <input
+        type="date"
+        aria-label="Pick a date from the calendar"
+        title="Pick a date from the calendar"
+        value={valid}
+        onChange={(e) => { if (e.target.value) onChange(e.target.value); }}
+        className="absolute right-1 top-1/2 h-6 w-7 -translate-y-1/2 cursor-pointer opacity-0"
+      />
+    </div>
   );
 }

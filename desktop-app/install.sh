@@ -36,10 +36,17 @@ VENV="$HOME/.local/share/arocall/venv"
 BIN="$HOME/.local/bin"
 python3 -m venv "$VENV"
 "$VENV/bin/pip" install --quiet --upgrade pip
-"$VENV/bin/pip" install "$APP_DIR"
+"$VENV/bin/pip" install --quiet --upgrade "$APP_DIR"
 mkdir -p "$BIN"
 ln -sf "$VENV/bin/arocall-agent" "$BIN/arocall-agent"
 echo "Installed: $BIN/arocall-agent (ensure ~/.local/bin is on your PATH)"
+# Brand icon: tray base, settings window, autostart/taskbar entry.
+ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+mkdir -p "$ICON_DIR"
+if [ -f "$APP_DIR/src/arocall_agent/assets/icon.png" ]; then
+  cp "$APP_DIR/src/arocall_agent/assets/icon.png" "$ICON_DIR/arocall-agent.png"
+  echo "Installed icon: $ICON_DIR/arocall-agent.png"
+fi
 
 if [ "$AUTOSTART" = "ask" ]; then
   read -r -p "Start on login? [Y/n] " ans

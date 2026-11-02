@@ -36,6 +36,11 @@ def tooltip() -> str:
 
 
 def _make_icon(status: str):
+    try:
+        from . import icons as icons_mod
+        return icons_mod.make_status_icon(status)
+    except Exception as e:
+        log.error("brand icon failed, using fallback: %s", e)
     from PIL import Image, ImageDraw
 
     color, _ = STATUSES.get(status, STATUSES["error"])

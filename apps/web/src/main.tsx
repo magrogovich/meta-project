@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import { AppLayout } from "./components/layout";
 import { Login, Walkthrough } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
+import { Attention } from "./pages/Attention";
 import { EmployeeProfile, CallDetail } from "./pages/Employee";
 import { Employees } from "./pages/Employees";
 import { Calls } from "./pages/Calls";
@@ -36,6 +37,7 @@ function App() {
             <AppLayout onHelp={helpFn}>
               <Switch>
                 <Route path="/"><Dashboard /></Route>
+                <Route path="/attention"><Attention /></Route>
                 <Route path="/employees"><Employees /></Route>
                 <Route path="/employees/:id"><EmployeeProfile /></Route>
                 <Route path="/calls/:id"><CallDetail /></Route>

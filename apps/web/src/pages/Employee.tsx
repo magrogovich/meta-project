@@ -9,30 +9,55 @@ import { LineChart, HBars } from "../components/charts";
 
 const TABS = ["Overview", "Calls", "Coaching", "Agent"] as const;
 
-// ---------- custom audio player (platform-styled) ----------
+// ---------- custom audio player (light, minimal) ----------
 function AudioPlayer({ src, audioRef }: { src: string; audioRef: React.RefObject<HTMLAudioElement | null> }) {
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
   const [dur, setDur] = useState(0);
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const barRef = useRef<HTMLDivElement>(null);
+  const fmt = (s: number) => {
+    if (!isFinite(s) || s < 0) s = 0;
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  };
+  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) a.play(); else a.pause(); };
+  const seekRatio = (ratio: number) => {
+    const a = audioRef.current;
+    if (!a || !dur) return;
+    const nt = Math.min(Math.max(ratio, 0), 1) * dur;
+    a.currentTime = nt; setT(nt);
+  };
+  const pct = dur ? Math.min(100, (t / dur) * 100) : 0;
   return (
-    <div className="mt-3 flex items-center gap-3 rounded-lg bg-gray-900 px-3 py-2.5 text-white">
+    <div className="mt-3 flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-2 ring-1 ring-gray-200">
       <audio ref={audioRef} src={src} preload="metadata"
         onTimeUpdate={(e) => setT(e.currentTarget.currentTime)}
         onLoadedMetadata={(e) => setDur(e.currentTarget.duration)}
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)} className="hidden" />
       <button
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-gray-900 hover:bg-gray-200"
-        onClick={() => { const a = audioRef.current; if (!a) return; if (a.paused) a.play(); else a.pause(); }}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gray-900 text-white transition hover:bg-gray-700"
+        onClick={toggle}
         aria-label={playing ? "Pause" : "Play"}>
-        {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
+        {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="ml-0.5 h-3.5 w-3.5" />}
       </button>
-      <span className="shrink-0 text-xs tabular-nums text-gray-300">{fmt(t)}</span>
-      <input type="range" min={0} max={dur || 0} step={0.1} value={Math.min(t, dur || 0)} aria-label="Seek"
-        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-gray-700 accent-teal-400"
-        onChange={(e) => { const a = audioRef.current; if (!a) return; a.currentTime = Number(e.target.value); setT(a.currentTime); }} />
-      <span className="shrink-0 text-xs tabular-nums text-gray-300">{fmt(dur)}</span>
+      <span className="shrink-0 text-xs tabular-nums text-gray-500">{fmt(t)}</span>
+      <div ref={barRef}
+        role="slider" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(t)}
+        tabIndex={0}
+        className="h-1.5 flex-1 cursor-pointer rounded-full bg-gray-200 outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        onClick={(e) => {
+          const el = barRef.current;
+          if (!el) return;
+          const r = el.getBoundingClientRect();
+          seekRatio((e.clientX - r.left) / r.width);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowRight") seekRatio((t + 5) / (dur || 1));
+          if (e.key === "ArrowLeft") seekRatio((t - 5) / (dur || 1));
+        }}>
+        <div className="h-full rounded-full bg-teal-600 transition-[width]" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="shrink-0 text-xs tabular-nums text-gray-400">{fmt(dur)}</span>
     </div>
   );
 }

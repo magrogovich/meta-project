@@ -10,12 +10,15 @@ DEFAULTS = {
     "employee_name": "",
     "mic_source": "@DEFAULT_SOURCE@",
     "monitor_source": "@DEFAULT_MONITOR@",
-    "energy_threshold": 0.02,      # RMS threshold on system stream to start a call
-    "hangover_sec": 1.0,           # speech must persist this long to trigger
-    "preroll_sec": 2.0,            # audio kept before trigger so call start isn't cut
-    "silence_timeout_sec": 20.0,   # call ends after this much system silence
-    "min_call_sec": 5.0,           # shorter "calls" are discarded
-    "require_mic_activity": False, # also require mic energy before starting
+    "capture_mode": "system",    # "system" (all computer sound) or "app" (one target app)
+    "target_app": "",            # app name/binary to capture in "app" mode (e.g. "zoom", "chrome")
+    "app_sink": "arocall_app",   # null sink the target app is routed through
+    # Voice-activity call detection (see vad.py + README "How call detection works").
+    "vad_aggressiveness": 2,     # 0-3; higher = stricter about what counts as speech
+    "buffer_s": 10,              # rolling pre-roll window kept in memory while idle
+    "min_speech_ms": 600,        # speech per stream inside the window required to start
+    "end_silence_s": 20,         # both-silence seconds before a call ends
+    "min_call_s": 5,             # shorter calls (after trimming) are discarded
     "max_queue_mb": 500,
     "heartbeat_sec": 60,
     "notify_calls": True,          # notify-send at call start/end

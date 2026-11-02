@@ -3,7 +3,7 @@ import { pgTable, uuid, text, timestamp, integer, real, jsonb, boolean } from "d
 export const orgs = pgTable("orgs", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
-  settings: jsonb("settings").$type<{ coaching?: { scoreBelow?: number; dropPoints?: number; criticalCount?: number }; quality?: { qaTarget?: number; passThreshold?: number; scoreBelow?: number; dropPoints?: number; criticalCount?: number }; languages?: string[]; retentionDays?: number }>().notNull().default({}),
+  settings: jsonb("settings").$type<{ coaching?: { scoreBelow?: number; dropPoints?: number; criticalCount?: number; qaTarget?: number; passThreshold?: number }; quality?: { qaTarget?: number; passThreshold?: number; scoreBelow?: number; dropPoints?: number; criticalCount?: number }; languages?: string[]; retentionDays?: number }>().notNull().default({}),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

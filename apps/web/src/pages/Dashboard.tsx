@@ -37,8 +37,6 @@ function Kpi({ label, value, delta, tip, spark, sub, onClick }: {
   );
 }
 
-const SEV_TONE: Record<string, "red" | "amber" | "gray"> = { critical: "red", warning: "amber", info: "gray" };
-
 export function Dashboard() {
   const [, nav] = useLocation();
   const dr = useMemo(defRange, []);
@@ -65,10 +63,7 @@ export function Dashboard() {
 
   return (
     <div className="w-full space-y-4">
-      <div>
-        <h1 className="text-lg font-bold tracking-tight text-gray-900">What needs my attention?</h1>
-        <p className="text-xs text-gray-500">Filters apply to everything below. {rangeNote}</p>
-      </div>
+      <p className="text-xs text-gray-500">Filters apply to everything below. {rangeNote}</p>
 
       <Card className="flex flex-wrap items-end gap-2 p-3">
         <div><label className="text-[11px] font-semibold text-gray-500">From</label>
@@ -104,28 +99,6 @@ export function Dashboard() {
               sub={k.coverage.recorded ? `${k.coverage.analyzed}/${k.coverage.recorded} · manual QA reviews 1–2%` : "no calls recorded"}
               onClick={() => nav(callsLink())} />
           </div>
-
-          <Card className="border-amber-200">
-            <CardHeader title="Needs attention" sub={`${data.attentionTotal} open · ranked by severity`}
-              right={<Link href="/calls" className="text-xs font-semibold text-indigo-700 hover:underline">View all</Link>} />
-            {!data.attention?.length ? <p className="p-4 text-xs text-gray-500">Nothing needs your attention.</p> : (
-              <ul className="divide-y divide-gray-100">
-                {data.attention.map((a: any, i: number) => (
-                  <li key={i}>
-                    <Link href={a.link} className="flex items-center gap-3 px-4 py-2.5 hover:bg-amber-50/50">
-                      <Pill tone={SEV_TONE[a.severity] || "gray"}>{a.severity}</Pill>
-                      <span className="flex-1 text-xs font-medium text-gray-800">{a.text}</span>
-                      {a.link.startsWith("/employees/") && (
-                        <button className="btn-outline !px-2 !py-1 text-[11px]"
-                          onClick={(e) => { e.preventDefault(); nav(`${a.link}`); }}>Start coaching</button>
-                      )}
-                      <span className="text-[11px] text-gray-400">Open →</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
 
           <div className="grid gap-3 lg:grid-cols-2">
             <Card>

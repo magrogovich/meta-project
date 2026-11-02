@@ -90,6 +90,15 @@ def open_settings(on_key_saved=None):
     root = tk.Tk()
     root.title("Arocall agent settings")
     root.geometry("480x560")
+    try:
+        from .icons import icon_path as _brand_icon
+        _p = _brand_icon()
+        if _p.is_file():
+            _img = tk.PhotoImage(file=str(_p))
+            root.iconphoto(True, _img)
+            root._brand_icon_ref = _img  # keep a reference: Tk drops unreferenced images
+    except Exception:
+        pass
     nb = ttk.Notebook(root)
     nb.pack(fill="both", expand=True, padx=8, pady=8)
 
@@ -145,6 +154,71 @@ def open_settings(on_key_saved=None):
     # ---- audio tab ----
     au_tab = ttk.Frame(nb)
     nb.add(au_tab, text="Audio")
+
+    def current_apps():
+        try:
+            return mod.list_apps()
+        except Exception:
+            return []
+
+    def app_match_of(a: dict) -> str:
+        return (a.get("binary") or a.get("app") or "").strip()
+
+    def app_label_of(a: dict) -> str:
+        name = a.get("app") or a.get("binary") or "unknown app"
+        media = a.get("media") or ""
+        return f"{name} — {media}" if media else name
+
+    mode_var = tk.StringVar(value=cfg.get("capture_mode") or "system")
+    target_var = tk.StringVar(value=cfg.get("target_app") or "")
+    apps_cache: dict = {}
+
+    ttk.Label(au_tab, text="Capture:").pack(anchor="w", padx=12, pady=(12, 0))
+    mode_row = ttk.Frame(au_tab)
+    mode_row.pack(fill="x", padx=12)
+    ttk.Radiobutton(mode_row, text="Entire system sound", variable=mode_var, value="system").pack(side="left")
+    ttk.Radiobutton(mode_row, text="One specific app", variable=mode_var, value="app").pack(side="left", padx=(12, 0))
+
+    app_row = ttk.Frame(au_tab)
+    app_row.pack(fill="x", padx=12, pady=(6, 0))
+    ttk.Label(app_row, text="App:").pack(side="left")
+    app_box = ttk.Combobox(app_row, textvariable=target_var, width=40)
+    app_box.pack(side="left", fill="x", expand=True, padx=(6, 4))
+    ttk.Button(app_row, text="Refresh",
+               command=lambda: refresh_apps()).pack(side="left")
+    ttk.Label(au_tab, text="Pick a running app above (or type its name — e.g. the softphone or browser you take calls in). Only that app's sound is recorded.",
+              wraplength=430).pack(padx=12, anchor="w")
+
+    def refresh_apps():
+        apps = current_apps()
+        apps_cache.clear()
+        vals = []
+        for a in apps:
+            m = app_match_of(a)
+            if not m:
+                continue
+            apps_cache[app_label_of(a)] = m
+            vals.append(app_label_of(a))
+        app_box.config(values=vals)
+        if not vals:
+            test_var.set("No apps are playing sound right now — play audio or start a call in the app, "
+                         "then press Refresh. You can also type the app name manually (while it plays "
+                         "sound, run: pactl list sink-inputs | grep application.name).")
+
+    def effective_monitor() -> str:
+        if mode_var.get() == "app" and target_var.get().strip():
+            try:
+                from .audio_linux import APP_SINK, app_monitor_source
+                return app_monitor_source(cfg.get("app_sink") or APP_SINK)
+            except Exception:
+                pass
+        return mon_var.get()
+
+    def save_audio_mode(*_a):
+        app_config.save({"capture_mode": mode_var.get(), "target_app": target_var.get().strip()})
+        mon_box.config(state="disabled" if mode_var.get() == "app" else "readonly")
+        restart_live()
+
     mic_var = tk.StringVar(value=cfg.get("mic_source") or choices["default_input"])
     mon_var = tk.StringVar(value=cfg.get("monitor_source") or choices["default_monitor"])
     ttk.Label(au_tab, text="Microphone (Agent track):").pack(anchor="w", padx=12, pady=(12, 0))
@@ -168,7 +242,7 @@ def open_settings(on_key_saved=None):
         try:
             if live["ms"] is None:
                 live["ms"] = mod.Stream(mic_var.get())
-                live["ns"] = mod.Stream(mon_var.get())
+                live["ns"] = mod.Stream(effective_monitor())
         except RuntimeError as e:
             test_var.set(f"Audio error: {e}")
             return False
@@ -198,11 +272,23 @@ def open_settings(on_key_saved=None):
     mic_box.bind("<<ComboboxSelected>>", restart_live)
     mon_box.bind("<<ComboboxSelected>>", restart_live)
 
+    def on_app_picked(*_a):
+        label = target_var.get().strip()
+        if label in apps_cache:
+            target_var.set(apps_cache[label])
+        save_audio_mode()
+
+    app_box.bind("<<ComboboxSelected>>", on_app_picked)
+    app_box.bind("<FocusOut>", on_app_picked)
+    mode_var.trace_add("write", save_audio_mode)
+    mon_box.config(state="disabled" if mode_var.get() == "app" else "readonly")
+    refresh_apps()
+
     def do_test():
         test_var.set("Recording 5 seconds — make some noise…")
         root.update_idletasks()
         try:
-            res = test_streams(mic_var.get(), mon_var.get(), 5)
+            res = test_streams(mic_var.get(), effective_monitor(), 5)
             test_var.set(
                 f"Mic peak {_level_db(res['mic']['peak'])} / avg {_level_db(res['mic']['avg'])}; "
                 f"system peak {_level_db(res['monitor']['peak'])} / avg {_level_db(res['monitor']['avg'])}. "
@@ -267,4 +353,23 @@ def open_settings(on_key_saved=None):
     ttk.Button(btns, text="Open logs folder", command=open_logs).pack(side="left", padx=4)
     ttk.Button(btns, text="Copy diagnostics", command=copy_diag).pack(side="left")
     refresh_info()
+
+    # ---- advanced tab (read-only VAD tuning values) ----
+    adv_tab = ttk.Frame(nb)
+    nb.add(adv_tab, text="Advanced")
+    ttk.Label(adv_tab, text="Call-detection tuning (voice activity detection).",
+              wraplength=430).pack(padx=12, pady=(12, 4), anchor="w")
+    adv_cfg = app_config.load()
+    for key, hint in [
+        ("vad_aggressiveness", "0-3; higher = stricter about what counts as speech"),
+        ("buffer_s", "rolling pre-roll window kept in memory while idle (s)"),
+        ("min_speech_ms", "speech per stream in the window required to start (ms)"),
+        ("end_silence_s", "both-silence seconds before a call ends (s)"),
+        ("min_call_s", "shorter calls are discarded after trimming (s)"),
+    ]:
+        ttk.Label(adv_tab, text=f"{key} = {adv_cfg.get(key)}  ({hint})",
+                  wraplength=430).pack(padx=12, anchor="w")
+    ttk.Label(adv_tab, text="Edit these in ~/.config/arocall/config.json while the agent is stopped. "
+              "Watch them live with: arocall-agent monitor (records nothing).",
+              wraplength=430).pack(padx=12, pady=(8, 0), anchor="w")
     root.mainloop()

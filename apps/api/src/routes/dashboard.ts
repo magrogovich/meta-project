@@ -226,7 +226,7 @@ dashRouter.get("/summary", async (req: any, res) => {
     range: { from: range.from.toISOString(), to: range.to.toISOString(), prevFrom: range.prevFrom.toISOString(), prevTo: range.prevTo.toISOString() },
     rules: { qaTarget: rules.qaTarget, passThreshold: rules.passThreshold, dropPoints: rules.dropPoints, criticalCount: rules.criticalCount },
     defs: DEFS,
-    kpis, attention, attentionTotal: items.length,
+    kpis, attention, attentionAll: items, attentionTotal: items.length,
     trend: { points: trend, target: rules.qaTarget, weekly },
     criteria,
     heatmap: { columns: Object.values(aC).map((c: any) => ({ id: c.id, name: c.name })), rows: heatmap },

@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, PhoneCall, Users, Mic, BookOpen, Settings as SettingsIcon, Bell, Menu, LogOut, CircleHelp } from "lucide-react";
+import { LayoutDashboard, Siren, PhoneCall, Users, Mic, BookOpen, Settings as SettingsIcon, Bell, Menu, LogOut, CircleHelp } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
 const NAV = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: Siren, label: "Attention", path: "/attention" },
   { icon: PhoneCall, label: "Calls", path: "/calls" },
   { icon: Users, label: "Employees", path: "/employees" },
   { icon: Mic, label: "Coaching", path: "/coaching" },
@@ -19,6 +20,7 @@ const NAV_BOTTOM = [
 function pageNameFor(path: string): string {
   const p = path.split("?")[0];
   if (p === "/") return "Dashboard";
+  if (p.startsWith("/attention")) return "Attention";
   if (p.startsWith("/calls") && p !== "/calls") return "Call detail";
   if (p.startsWith("/calls")) return "Calls";
   if (p.startsWith("/employees") && p !== "/employees") return "Employee profile";

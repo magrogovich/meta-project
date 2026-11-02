@@ -43,8 +43,9 @@ class CallRecorder:
             # shared start timestamp; per-stream offsets (0.0 = in sync)
             "agent_offset_sec": 0.0, "customer_offset_sec": 0.0,
         }
-        for item in preroll or []:
-            self.write_frame(item[2], item[3])
+        # preroll: list of (mic_pcm, sys_pcm) raw frames (VAD pre-roll dump)
+        for mic_pcm, sys_pcm in preroll or []:
+            self.write_frame(sys_pcm, mic_pcm)
         return call_id
 
     def write_frame(self, sys_pcm: bytes, mic_pcm: bytes):
@@ -69,7 +70,11 @@ class CallRecorder:
         import shutil
         shutil.rmtree(st["dir"], ignore_errors=True)
 
-    def finish(self) -> CallFiles | None:
+    def finish(self, drop_trailing_frames: int = 0) -> CallFiles | None:
+        """Close the call, trimming trailing silence (in 30 ms VAD frames).
+
+        Duration is measured from the kept audio frames, not the wall clock.
+        """
         st = self.active
         self.active = None
         if not st:
@@ -78,7 +83,11 @@ class CallRecorder:
         st["customer"].close()
         import json
 
-        duration = (time.time() - st["start_wall"])
+        if drop_trailing_frames > 0:
+            drop_wave = drop_trailing_frames * VAD_FRAME_SAMPLES
+            _trim_wav_tail(st["dir"] / "agent.wav", drop_wave)
+            _trim_wav_tail(st["dir"] / "customer.wav", drop_wave)
+        duration = _wav_duration(st["dir"] / "agent.wav", self.rate)
         meta = {
             "call_id": st["call_id"],
             "agent_app": APP_NAME,
@@ -102,3 +111,23 @@ class CallRecorder:
 
 def uuid4hex() -> str:
     return uuid.uuid4().hex
+
+
+VAD_FRAME_SAMPLES = 480  # one 30 ms VAD frame at 16 kHz
+
+
+def _trim_wav_tail(path: Path, drop_samples: int) -> None:
+    """Rewrite a WAV without its last `drop_samples` samples."""
+    with wave.open(str(path), "rb") as w:
+        params = w.getparams()
+        keep = max(0, w.getnframes() - drop_samples)
+        w.rewind()
+        frames = w.readframes(keep)
+    with wave.open(str(path), "wb") as w:
+        w.setparams(params)
+        w.writeframes(frames)
+
+
+def _wav_duration(path: Path, rate: int) -> float:
+    with wave.open(str(path), "rb") as w:
+        return round(w.getnframes() / rate, 2)

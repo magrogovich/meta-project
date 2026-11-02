@@ -10,16 +10,45 @@ import { LineChart, HBars } from "../components/charts";
 const TABS = ["Overview", "Calls", "Coaching", "Agent"] as const;
 
 // ---------- custom audio player (light, minimal) ----------
+// The stored file is split-track stereo (agent = left, customer = right) so
+// the pipeline can label speakers by channel. For listening, the player
+// loads a centered mono mix from the API (?mix=mono: both voices, both ears),
+// with a Mono/Stereo toggle that swaps the source while keeping position.
 function AudioPlayer({ src, audioRef }: { src: string; audioRef: React.RefObject<HTMLAudioElement | null> }) {
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
   const [dur, setDur] = useState(0);
+  const [mono, setMono] = useState(true);
+  const [audioError, setAudioError] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
+  const pendingSeek = useRef<{ pos: number; play: boolean } | null>(null);
+  const url = mono ? `${src}?mix=mono` : src;
+  useEffect(() => { setAudioError(false); setT(0); setDur(0); pendingSeek.current = null; }, [src]);
   const fmt = (s: number) => {
     if (!isFinite(s) || s < 0) s = 0;
     return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   };
-  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) a.play(); else a.pause(); };
+  const togglePlay = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) a.play(); else a.pause();
+  };
+  const toggleMix = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    pendingSeek.current = { pos: a.currentTime, play: !a.paused };
+    setMono((m) => !m);
+  };
+  const onLoaded = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    const el = e.currentTarget;
+    setDur(el.duration);
+    const p = pendingSeek.current;
+    pendingSeek.current = null;
+    if (p) {
+      el.currentTime = Math.min(p.pos, el.duration || 0);
+      if (p.play) el.play().catch(() => {});
+    }
+  };
   const seekRatio = (ratio: number) => {
     const a = audioRef.current;
     if (!a || !dur) return;
@@ -29,14 +58,15 @@ function AudioPlayer({ src, audioRef }: { src: string; audioRef: React.RefObject
   const pct = dur ? Math.min(100, (t / dur) * 100) : 0;
   return (
     <div className="mt-3 flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-2 ring-1 ring-gray-200">
-      <audio ref={audioRef} src={src} preload="metadata"
+      <audio ref={audioRef} src={url} preload="metadata"
         onTimeUpdate={(e) => setT(e.currentTarget.currentTime)}
-        onLoadedMetadata={(e) => setDur(e.currentTarget.duration)}
+        onLoadedMetadata={onLoaded}
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)} className="hidden" />
+        onEnded={() => setPlaying(false)}
+        onError={() => setAudioError(true)} className="hidden" />
       <button
         className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gray-900 text-white transition hover:bg-gray-700"
-        onClick={toggle}
+        onClick={togglePlay}
         aria-label={playing ? "Pause" : "Play"}>
         {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="ml-0.5 h-3.5 w-3.5" />}
       </button>
@@ -58,6 +88,16 @@ function AudioPlayer({ src, audioRef }: { src: string; audioRef: React.RefObject
         <div className="h-full rounded-full bg-teal-600 transition-[width]" style={{ width: `${pct}%` }} />
       </div>
       <span className="shrink-0 text-xs tabular-nums text-gray-400">{fmt(dur)}</span>
+      {audioError && <span className="shrink-0 text-[11px] text-red-600">Couldn't load audio</span>}
+      <button
+        onClick={toggleMix}
+        title={mono
+          ? "Mono mix: agent + customer in both ears (click for true stereo: agent left, customer right)"
+          : "True stereo: agent left, customer right (click for mono mix in both ears)"}
+        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 transition ${
+          mono ? "bg-gray-900 text-white ring-gray-900" : "text-gray-500 ring-gray-300 hover:text-gray-900"}`}>
+        {mono ? "Mono" : "Stereo"}
+      </button>
     </div>
   );
 }

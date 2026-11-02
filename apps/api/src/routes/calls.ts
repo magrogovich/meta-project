@@ -103,6 +103,32 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 export const callRouter = Router();
 callRouter.get("/audio/:file", async (req, res) => {
   const { storageDir } = await import("../lib/util.js");
+  const { join } = await import("path");
+  const { existsSync, readFileSync, writeFileSync } = await import("fs");
+  // ?mix=mono serves a centered mono mix (agent + customer in both ears).
+  // The stored split-track stereo is untouched — the pipeline still labels
+  // speakers by channel. Mixed output is cached next to the original.
+  if (req.query.mix === "mono") {
+    try {
+      const dir = storageDir();
+      const cached = `${req.params.file}.mono.wav`;
+      if (!existsSync(join(dir, cached))) {
+        const { parseWav, encodeWav } = await import("../lib/audio.js");
+        const info = parseWav(readFileSync(join(dir, req.params.file)));
+        if (info.channels !== 2 || info.bits !== 16) throw new Error("not stereo PCM");
+        const n = Math.floor(info.data.length / 4);
+        const mixed = Buffer.alloc(n * 2);
+        for (let i = 0; i < n; i++) {
+          const l = info.data.readInt16LE(i * 4), r = info.data.readInt16LE(i * 4 + 2);
+          mixed.writeInt16LE(Math.round((l + r) / 2), i * 2);
+        }
+        writeFileSync(join(dir, cached), encodeWav(mixed, info.sampleRate, 1, 16));
+      }
+      return res.sendFile(cached, { root: dir });
+    } catch {
+      // Anything unexpected (e.g. non-PCM upload): fall back to the original.
+    }
+  }
   res.sendFile(req.params.file, { root: storageDir() });
 });
 callRouter.use(authMw);

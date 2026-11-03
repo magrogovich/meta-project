@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert";
 import { newLoop, step } from "./lib/coachingLoop.js";
-import { trimHistory, HUMAN_REGEX, GOODBYE_REGEX } from "./lib/coach.js";
+import { trimHistory, HUMAN_REGEX, GOODBYE_REGEX, resolveInitialStatus, isDue } from "./lib/coach.js";
+import { isValidEmail, isValidMeetLink } from "./lib/mailer.js";
 import { splitSentences } from "./lib/openaiTts.js";
 
 test("normal turn: utterance -> llmDone queues sentences, played -> listening", () => {
@@ -58,4 +59,35 @@ test("max duration ends session; goodbye ends after 2+ turns", () => {
 
 test("sentence splitter", () => {
   assert.deepEqual(splitSentences("Hello! How are you? Fine."), ["Hello!", "How are you?", "Fine."]);
+});
+
+test("scheduling: future parks as scheduled, past/empty starts now", () => {
+  const fut = new Date(Date.now() + 3600000).toISOString();
+  const r1 = resolveInitialStatus(fut);
+  assert.equal(r1.status, "scheduled");
+  assert.ok(r1.at instanceof Date);
+  assert.equal(resolveInitialStatus(null).status, "waiting_for_employee");
+  assert.equal(resolveInitialStatus(new Date(Date.now() - 60000).toISOString()).status, "waiting_for_employee");
+});
+
+test("due check: waiting + due scheduled included, future scheduled excluded", () => {
+  assert.ok(isDue({ status: "waiting_for_employee" } as any));
+  assert.ok(isDue({ status: "scheduled", scheduledAt: new Date(Date.now() - 1000) } as any));
+  assert.ok(!isDue({ status: "scheduled", scheduledAt: new Date(Date.now() + 3600000) } as any));
+  assert.ok(!isDue({ status: "ended" } as any));
+});
+
+test("invite email validation", () => {
+  assert.ok(isValidEmail("jane@company.com"));
+  assert.ok(!isValidEmail("not-an-email"));
+  assert.ok(!isValidEmail(""));
+});
+
+test("manual Meet link validation rejects placeholders", () => {
+  assert.ok(isValidMeetLink("https://meet.google.com/abc-defg-hij"));
+  assert.ok(!isValidMeetLink("https://meet.google.com/…"));
+  assert.ok(!isValidMeetLink("https://meet.google.com/..."));
+  assert.ok(!isValidMeetLink("https://meet.google.com/"));
+  assert.ok(!isValidMeetLink("https://example.com/abc-defg-hij"));
+  assert.ok(!isValidMeetLink(""));
 });

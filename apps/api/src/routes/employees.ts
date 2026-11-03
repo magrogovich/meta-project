@@ -76,12 +76,13 @@ empRouter.get("/table", async (req: any, res) => {
 });
 
 empRouter.post("/", async (req: any, res) => {
-  const { name, department, languages, startDate, photo } = req.body || {};
+  const { name, email, department, languages, startDate, photo } = req.body || {};
   if (!name) return res.status(400).json({ error: "name required" });
   const dept = await ensureDepartment(req.user.orgId, department);
   const key = newSessionKey();
   const [e] = await db.insert(s.employees).values({
-    orgId: req.user.orgId, name, department: dept,
+    orgId: req.user.orgId, name, email: String(email || "").trim().toLowerCase(),
+    department: dept,
     languages: Array.isArray(languages) ? languages : ["en"],
     startDate: startDate || new Date().toISOString().slice(0, 10),
     photo: photo || "", sessionKeyHash: "", sessionKeyPrefix: key.slice(0, 8),
@@ -92,23 +93,29 @@ empRouter.post("/", async (req: any, res) => {
   res.json({ employee: stripSecrets(e), sessionKey: key });
 });
 
-// CSV import: header name,department,languages (languages separated by ; or |)
+// CSV import: header name,email,department,languages (languages separated by ; or |)
 empRouter.post("/import", multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } }).single("file"), async (req: any, res) => {
   const raw = (req as any).file?.buffer?.toString("utf8") || req.body?.csv || "";
   if (!raw.trim()) return res.status(400).json({ error: "empty CSV" });
   const lines = raw.split(/\r?\n/).filter((l: string) => l.trim());
   const header = lines[0].toLowerCase();
-  if (!header.includes("name")) return res.status(400).json({ error: "CSV needs a header row with name,department,languages" });
+  if (!header.includes("name")) return res.status(400).json({ error: "CSV needs a header row with name,email,department,languages" });
+  const heads = lines[0].split(",").map((h: string) => h.trim().toLowerCase());
+  const H = (n: string) => heads.indexOf(n);
   const created: { name: string; sessionKey: string }[] = [];
   const errors: string[] = [];
   for (const line of lines.slice(1, 51)) {
-    const [name, department, langs] = line.split(",").map((x: string) => (x || "").trim());
+    const cols = line.split(",").map((x: string) => (x || "").trim());
+    const name = H("name") >= 0 ? cols[H("name")] : cols[0];
+    const email = H("email") >= 0 ? (cols[H("email")] || "").toLowerCase() : "";
+    const department = H("department") >= 0 ? cols[H("department")] : cols[1];
+    const langs = H("languages") >= 0 ? cols[H("languages")] : cols[2];
     if (!name) { errors.push(`skipped empty row`); continue; }
     try {
       const dept = await ensureDepartment(req.user.orgId, department);
       const key = newSessionKey();
       const [e] = await db.insert(s.employees).values({
-        orgId: req.user.orgId, name, department: dept,
+        orgId: req.user.orgId, name, email, department: dept,
         languages: (langs || "en").split(/[;|]/).map((x: string) => x.trim()).filter(Boolean),
         startDate: new Date().toISOString().slice(0, 10),
         sessionKeyHash: "", sessionKeyPrefix: key.slice(0, 8),
@@ -122,8 +129,9 @@ empRouter.post("/import", multer({ storage: multer.memoryStorage(), limits: { fi
 });
 
 empRouter.patch("/:id", async (req: any, res) => {
-  const { name, department, languages, photo, status } = req.body || {};
+  const { name, email, department, languages, photo, status } = req.body || {};
   const patch: any = { ...(name && { name }), ...(languages && { languages }), ...(photo !== undefined && { photo }), ...(status && { status }) };
+  if (email !== undefined) patch.email = String(email || "").trim().toLowerCase();
   if (department) patch.department = await ensureDepartment(req.user.orgId, department);
   await db.update(s.employees).set(patch)
     .where(and(eq(s.employees.id, req.params.id), eq(s.employees.orgId, req.user.orgId)));

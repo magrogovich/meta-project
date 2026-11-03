@@ -72,3 +72,17 @@ export function trimHistory(
 
 export const HUMAN_REGEX = /harass|complaint|health|sick|anxiet|unfair|manager.*(yelled|abuse)|human.*(evaluator|manager)|i want.*human/i;
 export const GOODBYE_REGEX = /\b(goodbye|bye\b|that's all|we'?re done|end.*session)\b/i;
+
+// Autonomous scheduling: a future scheduledAt parks the session as "scheduled"
+// (the bot ignores it until due); anything else starts immediately.
+export function resolveInitialStatus(scheduledAt?: string | null): { status: CoachStatus; at: Date | null } {
+  const at = scheduledAt ? new Date(scheduledAt) : null;
+  if (at && !isNaN(+at) && +at > Date.now() + 60000) return { status: "scheduled", at };
+  return { status: "waiting_for_employee", at: null };
+}
+
+export function isDue(s: { status: string; scheduledAt?: any }): boolean {
+  if (s.status === "waiting_for_employee") return true;
+  if (s.status === "scheduled" && s.scheduledAt && +new Date(s.scheduledAt) <= Date.now()) return true;
+  return false;
+}

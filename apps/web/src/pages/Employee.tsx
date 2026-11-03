@@ -166,32 +166,54 @@ function AgentKey({ employeeId, isAdmin }: { employeeId: string; isAdmin: boolea
 }
 
 // ---------- start-coaching dialog ----------
-export function CoachDialog({ employeeId, employeeName, onClose }: { employeeId: string; employeeName: string; onClose: () => void }) {
+export function CoachDialog({ employeeId, employeeName, employeeEmail, onClose }: { employeeId: string; employeeName: string; employeeEmail?: string; onClose: () => void }) {
   const [, nav] = useLocation();
   const [topics, setTopics] = useState("");
   const [memoId, setMemoId] = useState("");
-  const [meetLink, setMeetLink] = useState("");
+  const [email, setEmail] = useState(employeeEmail || "");
+  const [mode, setMode] = useState<"now" | "scheduled">("now");
+  const [when, setWhen] = useState("");
+  const [err, setErr] = useState("");
   const { data: memos } = useQuery({ queryKey: ["memos", employeeId], queryFn: () => api(`/api/memos?employeeId=${employeeId}`) });
   const start = useMutation({
-    mutationFn: (manualMeetUrl?: string) => api("/api/coach", { method: "POST", body: JSON.stringify({ employeeId, memoId: memoId || undefined, topics, ...(manualMeetUrl ? { meetUrl: manualMeetUrl } : {}) }) }),
+    mutationFn: () => api("/api/coach", {
+      method: "POST",
+      body: JSON.stringify({
+        employeeId, memoId: memoId || undefined, topics,
+        email: email.trim() || undefined,
+        ...(mode === "scheduled" && when ? { scheduledAt: new Date(when).toISOString() } : {}),
+      }),
+    }),
     onSuccess: (r) => nav(`/coach-room/${r.id}?token=${r.token}`),
+    onError: (e: any) => setErr(e.message),
   });
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4">
       <div className="card w-full max-w-md p-5">
         <h2 className="text-sm font-bold text-gray-900">Start AI coaching — {employeeName}</h2>
-        <p className="mt-0.5 text-[11px] text-gray-500">Creates a Google Meet + AI coach joins as “Arocall AI Coach”. Falls back to browser mode.</p>
-        <label className="mt-3 block text-[11px] font-semibold text-gray-500">Focus topics</label>
+        <p className="mt-0.5 text-[11px] text-gray-500">Auto-creates a Google Meet, emails the invite to the employee, and the AI coach joins on its own. No manual links.</p>
+        <label className="mt-3 block text-[11px] font-semibold text-gray-500">Employee email (invite goes here)</label>
+        <input className="input mt-1" type="email" placeholder="jane@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <label className="mt-2 block text-[11px] font-semibold text-gray-500">Focus topics</label>
         <input className="input mt-1" placeholder="e.g. closing, empathy on billing calls" value={topics} onChange={(e) => setTopics(e.target.value)} />
         <label className="mt-2 block text-[11px] font-semibold text-gray-500">Attach memo (optional)</label>
         <select className="input mt-1" value={memoId} onChange={(e) => setMemoId(e.target.value)}>
           <option value="">none</option>{((memos as any[]) || []).map((m: any) => <option key={m.id} value={m.id}>{m.content?.employee} · {m.content?.period}</option>)}
         </select>
-        <label className="mt-2 block text-[11px] font-semibold text-gray-500">Meet link override (optional — when Google isn’t connected)</label>
-        <input className="input mt-1" placeholder="https://meet.google.com/…" value={meetLink} onChange={(e) => setMeetLink(e.target.value)} />
+        <label className="mt-2 block text-[11px] font-semibold text-gray-500">When</label>
+        <div className="mt-1 flex gap-1">
+          <button type="button" onClick={() => setMode("now")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${mode === "now" ? "bg-gray-900 text-white" : "text-gray-500 ring-1 ring-gray-200"}`}>Now (instant)</button>
+          <button type="button" onClick={() => setMode("scheduled")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${mode === "scheduled" ? "bg-gray-900 text-white" : "text-gray-500 ring-1 ring-gray-200"}`}>Schedule</button>
+        </div>
+        {mode === "scheduled" && (
+          <input className="input mt-2" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+        )}
+        {err && <p className="mt-2 rounded-md bg-red-50 p-2 text-xs text-red-700 ring-1 ring-red-200">{err}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <button className="btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={() => start.mutate(meetLink || undefined)}><Mic className="h-3.5 w-3.5" /> Start session</button>
+          <button className="btn" disabled={start.isPending || (mode === "scheduled" && !when)} onClick={() => { setErr(""); start.mutate(); }}>
+            <Mic className="h-3.5 w-3.5" /> {mode === "scheduled" ? "Schedule session" : "Start now"}
+          </button>
         </div>
       </div>
     </div>
@@ -203,7 +225,7 @@ function EditDialog({ employee, onClose }: { employee: any; onClose: () => void 
   const qc = useQueryClient();
   const { data: depts } = useQuery({ queryKey: ["depts"], queryFn: () => api("/api/departments") });
   const [form, setForm] = useState({
-    name: employee.name, department: employee.department,
+    name: employee.name, email: employee.email || "", department: employee.department,
     languages: (employee.languages || []).join(", "), status: employee.status || "active",
   });
   const save = useMutation({
@@ -219,6 +241,8 @@ function EditDialog({ employee, onClose }: { employee: any; onClose: () => void 
         <h2 className="text-sm font-bold text-gray-900">Edit employee</h2>
         <label className="mt-3 block text-[11px] font-semibold text-gray-500">Name</label>
         <input className="input mt-1" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <label className="mt-2 block text-[11px] font-semibold text-gray-500">Work email (coaching invites)</label>
+        <input className="input mt-1" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         <label className="mt-2 block text-[11px] font-semibold text-gray-500">Department</label>
         <select className="input mt-1" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}>
           {[...new Set([...((depts as any[]) || []).map((d) => d.name), form.department])].map((d) => <option key={d} value={d}>{d}</option>)}
@@ -379,7 +403,7 @@ export function EmployeeProfile() {
           {e.photo ? <img src={e.photo} className="h-14 w-14 rounded-full object-cover" alt="" /> : <div className="grid h-14 w-14 place-items-center rounded-full bg-gray-900 text-xl font-bold text-white">{e.name[0]}</div>}
           <div className="min-w-48 flex-1">
             <h1 className="text-lg font-bold tracking-tight text-gray-900">{e.name}</h1>
-            <p className="text-xs text-gray-500">{e.department} · {(e.languages || []).join(", ")}</p>
+            <p className="text-xs text-gray-500">{e.department} · {(e.languages || []).join(", ")}{e.email ? ` · ${e.email}` : ""}</p>
           </div>
           <Pill tone={scoreTone(e.overallScore || 0)}><span className="text-base">{e.overallScore ?? "—"}</span></Pill>
           <span className="text-xs text-gray-500">{data.trend?.length > 1 ? `trend ${data.trend[data.trend.length - 1].score >= data.trend[0].score ? "↗" : "↘"}` : ""}</span>
@@ -477,7 +501,7 @@ export function EmployeeProfile() {
         </div>
       )}
 
-      {coachOpen && <CoachDialog employeeId={id} employeeName={e.name} onClose={() => setCoachOpen(false)} />}
+      {coachOpen && <CoachDialog employeeId={id} employeeName={e.name} employeeEmail={e.email} onClose={() => setCoachOpen(false)} />}
       {editOpen && <EditDialog employee={e} onClose={() => setEditOpen(false)} />}
     </div>
   );

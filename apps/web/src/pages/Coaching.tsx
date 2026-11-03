@@ -10,7 +10,7 @@ const TABS = ["Queue", "Memos", "AI sessions", "Action items"] as const;
 
 export function Coaching() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Queue");
-  const [coachFor, setCoachFor] = useState<{ id: string; name: string } | null>(null);
+  const [coachFor, setCoachFor] = useState<{ id: string; name: string; email?: string } | null>(null);
   return (
     <div className="w-full space-y-4">
       <div>
@@ -26,14 +26,16 @@ export function Coaching() {
       {tab === "Memos" && <MemosTab />}
       {tab === "AI sessions" && <SessionsTab />}
       {tab === "Action items" && <ActionsTab />}
-      {coachFor && <CoachDialog employeeId={coachFor.id} employeeName={coachFor.name} onClose={() => setCoachFor(null)} />}
+      {coachFor && <CoachDialog employeeId={coachFor.id} employeeName={coachFor.name} employeeEmail={coachFor.email} onClose={() => setCoachFor(null)} />}
     </div>
   );
 }
 
-function QueueTab({ onCoach }: { onCoach: (e: { id: string; name: string }) => void }) {
+function QueueTab({ onCoach }: { onCoach: (e: { id: string; name: string; email?: string }) => void }) {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["queue"], queryFn: () => api("/api/coaching/queue") });
+  const { data: emps } = useQuery({ queryKey: ["emps"], queryFn: () => api("/api/employees") });
+  const emailOf = (id: string) => ((emps as any[]) || []).find((e) => e.id === id)?.email || "";
   const genMemo = useMutation({
     mutationFn: (employeeId: string) => api("/api/memos/generate", { method: "POST", body: JSON.stringify({ employeeId }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["memos"] }),
@@ -54,7 +56,7 @@ function QueueTab({ onCoach }: { onCoach: (e: { id: string; name: string }) => v
                 <button className="btn-outline" onClick={async () => { await genMemo.mutateAsync(q.employeeId); setMemoMade(q.name); setTimeout(() => setMemoMade(null), 3000); }}>
                   <FileText className="h-3.5 w-3.5" /> Memo
                 </button>
-                <button className="btn" onClick={() => onCoach({ id: q.employeeId, name: q.name })}><Mic className="h-3.5 w-3.5" /> Start session</button>
+                <button className="btn" onClick={() => onCoach({ id: q.employeeId, name: q.name, email: emailOf(q.employeeId) })}><Mic className="h-3.5 w-3.5" /> Start session</button>
               </span>
             </li>))}
         </ul>)}
@@ -104,7 +106,7 @@ function SessionsTab() {
                 <span className="ml-auto text-gray-400">{new Date(x.createdAt).toLocaleString()}</span>
               </div>
               <p className="mt-0.5 text-gray-500">Topics: {x.topics || "—"}</p>
-              <p className="text-gray-500">{x.summary || ""} · {x.transport || "meet"} · {x.status || ""}{x.meetUrl ? ` · ${x.meetUrl}` : ""}</p>
+              <p className="text-gray-500">{x.summary || ""} · {x.transport || "meet"} · {x.status || ""}{x.scheduledAt ? ` · scheduled ${new Date(x.scheduledAt).toLocaleString()}` : ""}{x.inviteEmail ? ` · invite → ${x.inviteEmail}${x.inviteSentAt ? " (sent)" : " (not sent)"}` : ""}{x.meetUrl ? ` · ${x.meetUrl}` : ""}{x.meetError ? ` · Meet error: ${x.meetError}` : ""}</p>
               {!!(x.actionItems || []).length && <p className="text-gray-500">Agreed: {(x.actionItems as string[]).join(" · ")}</p>}
               <Link href={`/coach-room/${x.id}?token=${x.token}`} className="font-semibold text-indigo-700 hover:underline">Open coaching room →</Link>
               {" · "}<Link href={`/coach/${x.id}?token=${x.token}`} className="text-gray-500 hover:underline">browser mode</Link>

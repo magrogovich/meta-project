@@ -8,6 +8,7 @@
 // Conversation loop (LISTENING/THINKING/SPEAKING) mirrors
 // apps/api/src/lib/coachingLoop.ts. STT uses the existing Muse STT endpoint
 // via the backend; LLM uses the existing provider; TTS uses OpenAI.
+import "dotenv/config";
 import { mkdirSync, writeFileSync } from "fs";
 import { chromium } from "playwright";
 import { SEL, DEBUG_DIR } from "./selectors.js";
@@ -19,6 +20,17 @@ const PROFILE = process.env.COACH_BOT_PROFILE_DIR || "/tmp/opencode/coach-bot-pr
 const HEADLESS = (process.env.COACH_BOT_HEADLESS ?? "true") !== "false";
 const DISPLAY_NAME = "Arocall AI Coach";
 
+// Join mode: "guest" (default) joins signed-out with display name "Arocall AI
+// Coach" — no login needed, works because spaces are OPEN access. "account"
+// uses the persistent profile (npm run login) for Workspace orgs that force
+// signed-in joins.
+const JOIN_MODE = (process.env.COACH_BOT_JOIN_MODE || "guest").toLowerCase() === "account" ? "account" : "guest";
+// BROWSER CHANNEL: empty = Playwright's bundled Chromium (Google often rejects
+// logins from it: "This browser or app may not be secure"). Set to "chrome" to
+// drive the installed Google Chrome instead — far less likely to be flagged.
+// (Guest mode never logs in, so this only matters for JOIN_MODE=account.)
+const CHANNEL = (process.env.COACH_BOT_CHANNEL || "") as "chrome" | "";
+
 async function api(path: string, opts: any = {}) {
   const r = await fetch(`${API}${path}`, { ...opts, headers: { "Content-Type": "application/json", "x-bot-secret": SECRET, ...(opts.headers || {}) } });
   if (!r.ok) throw new Error(`bot api ${path}: ${r.status}`);
@@ -28,11 +40,24 @@ async function api(path: string, opts: any = {}) {
 async function joinMeet(meetUrl: string, headed: boolean) {
   const tag = String(Date.now() % 100000);
   const sinks = await setupSinks(tag);
-  const browser = await chromium.launchPersistentContext(PROFILE, {
+  const launchOpts = {
     headless: headed ? false : HEADLESS,
-    args: ["--use-fake-ui-for-media-stream", "--mute-audio=false"],
+    args: ["--use-fake-ui-for-media-stream", "--mute-audio=false", "--disable-blink-features=AutomationControlled"],
+    ...(CHANNEL ? { channel: CHANNEL } : {}),
     env: { ...process.env, PULSE_SINK: sinks.meetIn, PULSE_SOURCE: sinks.coachMic } as any,
-  });
+  };
+  // Guest = fresh incognito-style context (never needs login). Account = persistent profile.
+  // Both expose pages()/close(), so the rest of the flow is identical. In guest
+  // mode the underlying Browser is closed together with the context below.
+  let browser: any;
+  if (JOIN_MODE === "guest") {
+    const b = await chromium.launch(launchOpts);
+    const ctx = await b.newContext();
+    (ctx as any).close = async () => { await ctx.close().catch(() => {}); await b.close().catch(() => {}); };
+    browser = ctx;
+  } else {
+    browser = await chromium.launchPersistentContext(PROFILE, launchOpts);
+  }
   const page = browser.pages()[0] || (await browser.newPage());
   const shot = async (name: string) => {
     try { mkdirSync(DEBUG_DIR, { recursive: true }); await page.screenshot({ path: `${DEBUG_DIR}/${name}.png` }); } catch {}
@@ -88,7 +113,12 @@ async function speakSentence(text: string, sink: string, sessionId: string, char
 }
 
 export async function runSession(session: any) {
-  const { browser, page, sinks, shot } = await joinMeet(session.meet_url || session.meetUrl, false);
+  console.log(`session ${session.id}: joining ${session.meet_url || session.meetUrl} as ${JOIN_MODE}...`);
+  const { browser, page, sinks, shot } = await joinMeet(session.meet_url || session.meetUrl, false).catch((e: any) => {
+    console.error(`session ${session.id}: JOIN FAILED: ${e?.message || e} (screenshot in ${DEBUG_DIR}, selector may need update in src/selectors.ts)`);
+    throw e;
+  });
+  console.log(`session ${session.id}: joined, waiting for employee...`);
   let ttsChars = 0;
   let failures = 0;
   const cb = (body: any) => api("/api/coach/bot/callback", { method: "POST", body: JSON.stringify({ sessionId: session.id, ...body }) });
@@ -136,11 +166,41 @@ export async function runSession(session: any) {
 async function main() {
   const cmd = process.argv[2];
   if (cmd === "login") {
-    const browser = await chromium.launchPersistentContext(PROFILE, { headless: false });
+    // Only needed for JOIN_MODE=account (Workspace orgs that force signed-in
+    // joins). Guest mode (default) never logs in — the bot joins signed-out as
+    // "Arocall AI Coach". Signs the SAME coach account connected in Integrations.
+    if (JOIN_MODE === "guest") {
+      console.log("JOIN_MODE=guest: no login needed — the bot joins signed-out as");
+      console.log(`"${DISPLAY_NAME}". Set COACH_BOT_JOIN_MODE=account first if your`);
+      console.log("Workspace forces signed-in joins, then re-run this command.");
+      return;
+    }
+    let browser;
+    try {
+      browser = await chromium.launchPersistentContext(PROFILE, {
+        headless: false,
+        args: ["--disable-blink-features=AutomationControlled"],
+        ...(CHANNEL ? { channel: CHANNEL } : {}),
+      });
+    } catch (e: any) {
+      console.error(`Could not open a browser window: ${e?.message || e}`);
+      console.error("Headed Chromium needs a display + system libs. Try:");
+      console.error("  npx playwright install --with-deps chromium   # missing libs");
+      console.error("  xvfb-run -a npm run login                     # headless Linux box");
+      process.exit(1);
+    }
     const page = browser.pages()[0] || (await browser.newPage());
     await page.goto("https://accounts.google.com/", { waitUntil: "domcontentloaded" });
-    console.log("Log in the dedicated bot Google account in the opened browser, then close it.");
-    await browser.close();
+    console.log("A browser window is open. Sign in with the COACH Google account");
+    console.log("(the SAME account connected in Settings → Integrations, ideally");
+    console.log("named 'Arocall AI Coach'), then press ENTER here.");
+    const { createInterface } = await import("readline");
+    await new Promise<void>((resolve) => {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      rl.question("Press ENTER after signing in (or Ctrl+C to abort)... ", () => { rl.close(); resolve(); });
+    });
+    await browser.close().catch(() => {});
+    console.log(`Login saved to profile ${PROFILE}. The bot will join Meets as this account.`);
     return;
   }
   if (cmd === "join" || cmd === "test-say") {
@@ -159,15 +219,21 @@ async function main() {
     await browser.close().catch(() => {});
     return;
   }
-  console.log(`coach-bot polling ${API} (profile ${PROFILE}, headless ${HEADLESS})`);
+  console.log(`coach-bot polling ${API} (joinMode ${JOIN_MODE}, headless ${HEADLESS})`);
+  let polls = 0;
   for (;;) {
     try {
       const pending: any[] = await api("/api/coach/bot/pending");
-      for (const s of pending) {
-        console.log("starting session", s.id);
-        await runSession(s).catch((e) => console.error("session failed", e));
+      polls++;
+      if (pending.length) {
+        for (const s of pending) {
+          console.log(`joining session ${s.id} status=${s.status} meet=${(s.meetUrl || s.meet_url || "").slice(0, 60)}`);
+          await runSession(s).catch((e) => console.error("session failed", s.id, e?.message || e));
+        }
+      } else if (polls % 6 === 1) {
+        console.log("poll ok: no joinable sessions (need status waiting_for_employee/scheduled-due + Meet link)");
       }
-    } catch (e) { console.error("poll failed", e); }
+    } catch (e: any) { console.error("poll failed", e?.message || e); }
     await new Promise((r) => setTimeout(r, 10000));
   }
 }

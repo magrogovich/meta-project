@@ -42,7 +42,7 @@ function KeyField({ value, employeeId, onLogged }: { value: string; employeeId: 
 function Wizard({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: "", department: "Support", languages: ["en"] as string[], photo: "" });
+  const [form, setForm] = useState({ name: "", email: "", department: "Support", languages: ["en"] as string[], photo: "" });
   const [newDept, setNewDept] = useState("");
   const [created, setCreated] = useState<{ id: string; name: string; sessionKey: string } | null>(null);
   const { data: depts } = useQuery({ queryKey: ["depts"], queryFn: () => api("/api/departments") });
@@ -94,6 +94,8 @@ function Wizard({ onDone }: { onDone: () => void }) {
             <>
               <div><label className="text-[11px] font-semibold text-gray-500">Name *</label>
                 <input className="input mt-1" placeholder="Jane Doe" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+              <div><label className="text-[11px] font-semibold text-gray-500">Work email (for coaching invites)</label>
+                <input className="input mt-1" type="email" placeholder="jane@company.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
               <div><label className="text-[11px] font-semibold text-gray-500">Photo</label>
                 <div className="mt-1 flex items-center gap-3">
                   {form.photo ? <img src={form.photo} className="h-10 w-10 rounded-full object-cover" alt="" /> : <div className="grid h-10 w-10 place-items-center rounded-full bg-gray-100 text-sm font-bold text-gray-500">{form.name[0]?.toUpperCase() || "?"}</div>}
@@ -158,7 +160,7 @@ function CsvImport({ onDone }: { onDone: () => void }) {
   };
   return (
     <Card className="p-4">
-      <p className="text-xs font-semibold text-gray-900">CSV import <span className="font-normal text-gray-500">header: <code>name,department,languages</code> (languages separated by ; — max 50 rows)</span></p>
+      <p className="text-xs font-semibold text-gray-900">CSV import <span className="font-normal text-gray-500">header: <code>name,email,department,languages</code> (languages separated by ; — max 50 rows)</span></p>
       <input type="file" accept=".csv,text/csv" disabled={busy} className="mt-2 text-xs text-gray-500" onChange={(e) => run(e.target.files?.[0])} />
       {result && (
         <div className="mt-2 text-xs">

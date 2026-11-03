@@ -155,7 +155,8 @@ for (let i = 0; i < PEOPLE.length; i++) {
   const name = `${p.first} ${p.last}`;
   const key = newSessionKey();
   const [e] = await db.insert(s.employees).values({
-    orgId, name, department: p.dept, languages: p.langs, startDate: "2025-01-15",
+    orgId, name, email: `${p.first.toLowerCase()}.${p.last.toLowerCase()}@example.com`,
+    department: p.dept, languages: p.langs, startDate: "2025-01-15",
     sessionKeyHash: "", sessionKeyPrefix: key.slice(0, 8),
     sessionKeyEnc: encryptKey(key), sessionKeyHmac: keyTag(key),
     sessionKeyRevoked: false, status: "active",

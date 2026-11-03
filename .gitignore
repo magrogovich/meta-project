@@ -16,6 +16,7 @@ apps/web/dist/
 .env.*.local
 apps/api/.env
 apps/web/.env
+coach-bot/.env
 
 # local runtime data
 storage/

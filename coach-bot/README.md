@@ -1,10 +1,15 @@
 # Coach Bot — Meet participant for AI coaching (Linux only)
 
-Playwright + Chromium bot that joins a Google Meet as **"Arocall AI Coach"**, hears the employee via virtual audio, and drives the conversation loop (Muse LLM + history, OpenAI TTS per sentence, VAD barge-in). Controlled by the backend through a pending queue + callbacks. Hackathon build: stable and simple over perfect.
+Playwright + Chromium bot that joins a Google Meet as the coach, hears the employee via virtual audio, and drives the conversation loop (Muse LLM + history, OpenAI TTS per sentence, VAD barge-in). Controlled by the backend through a pending queue + callbacks. Hackathon build: stable and simple over perfect.
+
+## The account model: ONE coach account for creating, NO login for joining
+Create one dedicated Google account for the coach (display name **"Arocall AI Coach"**).
+- **Settings → Integrations → Connect Google** (in the platform): sign in with the coach account. This authorizes the *backend* to **create** Meet spaces via the API (`spaces.create`). Stored encrypted per org. This is the ONLY login you need.
+- **Joining is login-free**: the bot joins spaces as a signed-out guest with display name "Arocall AI Coach" (`COACH_BOT_JOIN_MODE=guest`, default) — possible because spaces are created OPEN access. `npm run login` is only needed if you switch to `COACH_BOT_JOIN_MODE=account` (Workspace orgs that force signed-in joins).
 
 ## Prerequisites
 - Linux with PulseAudio/PipeWire: `pactl`, `paplay` installed.
-- Node 20+, one **dedicated** bot Google account (do not reuse a personal account).
+- Node 20+, the coach Google account (dedicated, named "Arocall AI Coach").
 - Backend API running (`pnpm dev` → `:4000`); same `COACH_BOT_SECRET` in API `.env` and this service's env.
 
 ## Install
@@ -15,6 +20,8 @@ npx playwright install chromium
 ```
 
 ## Env
+Copy values into `coach-bot/.env` (created for you, git-ignored, auto-loaded via dotenv).
+`COACH_BOT_SECRET` must equal the API's root `.env` value.
 | Var | Default | Purpose |
 |---|---|---|
 | `ARO_API` | `http://localhost:4000` | Backend base URL |
@@ -30,14 +37,14 @@ npx playwright install chromium
 
 ## Usage
 ```bash
-npm run login                                        # one-time: headed login for the bot account, then close
-npm run join -- https://meet.google.com/xxx-yyyy-zzz            # debug join only (headed)
+npm run login                                        # one-time: window stays open — sign in with the coach account (same as Integrations), then press ENTER here
+npm run join -- https://meet.google.com/xxx-yyyy-zzz            # debug join only (needs a display; headless servers: xvfb-run -a npm run join -- <url>)
 npm run test-say -- https://meet.google.com/xxx-yyyy-zzz "Hello! Can you hear me?"  # prove TTS audible
 npm start                                            # poll pending sessions every 10s and run them
 ```
 
 ## How a session runs
-1. Polls `GET /api/coach/bot/pending` → sessions with `transport=meet`, `status=waiting_for_employee`, and a `meetUrl`.
+1. Polls `GET /api/coach/bot/pending` → sessions with `transport=meet`, a `meetUrl`, and status `waiting_for_employee` **or `scheduled` whose time has come** — the bot auto-joins both, so scheduled calls need no human action.
 2. Creates per-session sinks (`src/audio.ts`): `meet_in_*` (Chromium out via `PULSE_SINK`, bot records `meet_in.monitor`), `coach_out_*` + virtual source `coach_mic_*` (Chromium mic via `PULSE_SOURCE`, TTS via `paplay`). Torn down afterwards.
 3. Joins via the Meet UI (`src/selectors.ts` — all selectors in one file): dismiss prompts → fill name → camera off → mic on → Join now. Screenshot to `$COACH_BOT_DEBUG_DIR` on any step failure.
 4. Waits for a human (participant count ≥ 2, then speech) → `status: live` callback → greeting (references a real call example per the coaching prompt) → conversation loop (see `apps/api/src/lib/coachingLoop.ts` for the tested state machine).
@@ -52,6 +59,8 @@ Hear the bot's output locally by loading `coach_out_*.monitor` in `pavucontrol`,
 
 ## Troubleshooting
 - **Bot never picks up sessions** → `COACH_BOT_SECRET` mismatch, or session has no `meetUrl` (Google not connected → paste one manually).
+- **"This browser or app may not be secure" at login** → Google flagged Playwright's bundled Chromium as automation. Fix: install real Google Chrome, set `COACH_BOT_CHANNEL=chrome` in `coach-bot/.env`, re-run `npm run login`. (Avoids the issue entirely: stay on `JOIN_MODE=guest`, which never logs in.)
+- **Login window closes instantly / won't open** → the old command exited immediately (fixed: it now waits for ENTER). If it still fails: `npx playwright install --with-deps chromium` (missing system libs) or `xvfb-run -a npm run login` (headless server, no display).
 - **Join fails / stuck at login** → `npm run login` again (Google session expired), or update `src/selectors.ts` (Meet UI changed) — check the debug screenshot first.
 - **Employee can't hear bot** → `coach_out_*` sink missing (`pactl` check), `paplay` not installed, or mock TTS (no `OPENAI_API_KEY`).
 - **Bot can't hear employee** → wrong `PULSE_SINK`, browser tab muted, or Meet mic permission denied in the headed login profile.

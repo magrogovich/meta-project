@@ -376,46 +376,99 @@ memoRouter.get("/:id", async (req: any, res) => {
 // ---- coaching sessions (Meet transport + inapp fallback) ----
 export const coachRouter = Router();
 
-// Create: admin only. Creates Meet space (or manual link fallback), session row,
-// audit entry. Transport from COACH_TRANSPORT unless overridden in body.
+// Create: admin only. Autonomous flow — auto-creates the Meet space (with token
+// refresh), stores the employee email, sends the invite email with both links,
+// and queues the bot (instant) or parks until the scheduled time. Manual link
+// is only a fallback. Transport from COACH_TRANSPORT unless overridden.
 coachRouter.post("/", authMw, async (req: any, res) => {
-  const { employeeId, memoId, topics, meetUrl: manualUrl, transport } = req.body || {};
+  const { employeeId, memoId, topics, meetUrl: manualUrl, transport, email, scheduledAt, sendInvite } = req.body || {};
   if (!employeeId) return res.status(400).json({ error: "employeeId required" });
   const emps = await db.select().from(s.employees).where(and(eq(s.employees.id, employeeId), eq(s.employees.orgId, req.user.orgId)));
   if (!emps.length) return res.status(404).json({ error: "employee not found" });
-  const { coachEnv, transportFor } = await import("../lib/coach.js");
+  const { coachEnv, transportFor, resolveInitialStatus } = await import("../lib/coach.js");
+  const { isValidEmail, sendCoachingInvite } = await import("../lib/mailer.js");
   const t = (transport || coachEnv.transport) as "meet" | "inapp";
   const token = "cs_" + Math.random().toString(36).slice(2, 10);
+  // Employee email: explicit field wins, else stored employee email.
+  const inviteTo = String(email || (emps[0] as any).email || "").trim();
+  if (email !== undefined && isValidEmail(email)) {
+    await db.update(s.employees).set({ email: email.trim() }).where(eq(s.employees.id, employeeId));
+  }
   let meetUrl = String(manualUrl || "");
   let spaceName = "";
+  let meetError = "";
   if (t === "meet" && !meetUrl) {
-    // Try Meet REST API with stored org Google tokens; fall back to manual link.
+    // Auto-create via Meet REST API (refreshes expired tokens). Errors surface
+    // to the UI instead of failing silently.
     try {
-      const integ = (await db.select().from(s.googleIntegrations).where(eq(s.googleIntegrations.orgId, req.user.orgId)))[0];
-      if (integ?.accessEnc) {
-        const { decryptKey } = await import("../lib/keys.js");
-        const { createMeetSpace } = await import("../lib/meet.js");
-        const r = await createMeetSpace(decryptKey(integ.accessEnc));
-        meetUrl = r.url; spaceName = r.name;
-      }
-    } catch { /* manual fallback below */ }
+      const { orgAccessToken, createMeetSpace } = await import("../lib/meet.js");
+      const access = await orgAccessToken(db, s, req.user.orgId);
+      const r = await createMeetSpace(access);
+      meetUrl = r.url; spaceName = r.name;
+    } catch (e: any) {
+      // Network/DNS failures surface as bare "fetch failed" — spell out the cause.
+      const msg = String(e?.message || "meet_create_failed");
+      meetError = (/fetch failed/i.test(msg)
+        ? "network: API server could not reach meet.googleapis.com (no internet / DNS / firewall / proxy). Check outbound HTTPS from the API machine."
+        : msg).slice(0, 400);
+      console.error(`[meet] spaces.create failed: ${msg} ${e?.cause ? `cause=${JSON.stringify(String(e.cause)).slice(0, 200)}` : ""}`);
+    }
   }
+  const { status, at } = t === "meet" ? resolveInitialStatus(scheduledAt) : { status: "live" as const, at: null };
   const [cs] = await db.insert(s.coachingSessions).values({
     orgId: req.user.orgId, employeeId, memoId: memoId || null, topics: topics || "", token,
-    transport: t, meetUrl, meetSpaceName: spaceName,
-    status: t === "meet" ? "waiting_for_employee" : "live",
+    transport: t, meetUrl, meetSpaceName: spaceName, meetError,
+    status, scheduledAt: at, inviteEmail: inviteTo,
     startedAt: t === "inapp" ? new Date() : null,
   }).returning();
+  // Invite email with Meet + room links (instant or scheduled).
+  let invite: any = { sent: false, reason: "no_email" };
+  const front = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
+  const when = at ? at.toLocaleString() : "";
+  if (t === "meet" && meetUrl && isValidEmail(inviteTo) && sendInvite !== false) {
+    const orgName = (await db.select().from(s.orgs).where(eq(s.orgs.id, req.user.orgId)))[0]?.name || "Arocall";
+    invite = await sendCoachingInvite(inviteTo, {
+      employeeName: emps[0].name, orgName,
+      meetUrl, roomUrl: `${front}/coach-room/${cs.id}?token=${token}`, when, topics: topics || "",
+    });
+    if (invite.sent) await db.update(s.coachingSessions).set({ inviteSentAt: new Date() }).where(eq(s.coachingSessions.id, cs.id));
+  }
   try { transportFor(t).startSession(cs.id, meetUrl); } catch { /* queued */ }
   await db.insert(s.auditLog).values({ orgId: req.user.orgId, userId: req.user.id, action: `coach_start:${t}`, callId: employeeId });
-  res.json({ ...cs, link: `/coach-room/${cs.id}?token=${token}`, inappLink: `/coach/${cs.id}?token=${token}`, needsMeetLink: t === "meet" && !meetUrl });
+  res.json({ ...cs, link: `/coach-room/${cs.id}?token=${token}`, inappLink: `/coach/${cs.id}?token=${token}`, needsMeetLink: t === "meet" && !meetUrl, invite });
 });
-// Bot: pending sessions (internal secret auth)
+// Resend the invite email for a session (admin).
+coachRouter.post("/:id/invite", authMw, async (req: any, res) => {
+  const { email } = req.body || {};
+  const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
+  if (!rows.length || (rows[0] as any).orgId !== req.user.orgId) return res.status(404).json({ error: "not found" });
+  const cs: any = rows[0];
+  if (!cs.meetUrl) return res.status(400).json({ error: "no Meet link yet" });
+  const { isValidEmail, sendCoachingInvite } = await import("../lib/mailer.js");
+  const to = String(email || cs.inviteEmail || "").trim();
+  if (!isValidEmail(to)) return res.status(400).json({ error: "valid employee email required" });
+  const front = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
+  const orgName = (await db.select().from(s.orgs).where(eq(s.orgs.id, req.user.orgId)))[0]?.name || "Arocall";
+  const emps = await db.select().from(s.employees).where(eq(s.employees.id, cs.employeeId));
+  const invite = await sendCoachingInvite(to, {
+    employeeName: emps[0]?.name || "there", orgName,
+    meetUrl: cs.meetUrl, roomUrl: `${front}/coach-room/${cs.id}?token=${cs.token}`,
+    when: cs.scheduledAt ? new Date(cs.scheduledAt).toLocaleString() : "", topics: cs.topics || "",
+  });
+  if (invite.sent) await db.update(s.coachingSessions).set({ inviteSentAt: new Date(), inviteEmail: to }).where(eq(s.coachingSessions.id, cs.id));
+  res.json({ invite });
+});
+// Bot: pending sessions (internal secret auth). Instant (waiting_for_employee)
+// plus scheduled sessions whose time has come — the bot auto-joins both.
 coachRouter.get("/bot/pending", async (req, res) => {
   const { coachEnv } = await import("../lib/coach.js");
   if (req.header("x-bot-secret") !== coachEnv.botSecret) return res.status(403).json({ error: "forbidden" });
   const rows = await db.select().from(s.coachingSessions);
-  const pending = rows.filter((r: any) => r.transport === "meet" && r.status === "waiting_for_employee" && r.meetUrl);
+  const now = Date.now();
+  const pending = rows.filter((r: any) => r.transport === "meet" && r.meetUrl && (
+    r.status === "waiting_for_employee" ||
+    (r.status === "scheduled" && r.scheduledAt && +new Date(r.scheduledAt) <= now)
+  ));
   res.json(pending);
 });
 // Bot callbacks (internal secret): status, turn append, human flag, end w/ summary.
@@ -477,7 +530,8 @@ coachRouter.get("/:id/room", async (req: any, res) => {
   }
   const turns = (await db.select().from(s.coachingTurns).where(eq(s.coachingTurns.sessionId, cs.id)))
     .sort((a, b) => a.idx - b.idx);
-  // Expiry: waiting > join timeout -> expired (checked lazily on poll).
+  // Expiry: instant waiting > join timeout -> expired (scheduled sessions wait
+  // for their time and never expire here).
   const { coachEnv } = await import("../lib/coach.js");
   if (cs.status === "waiting_for_employee") {
     const ageMin = (Date.now() - +new Date(cs.createdAt || Date.now())) / 60000;
@@ -538,8 +592,9 @@ coachRouter.post("/:id/flag", async (req, res) => {
 });
 // Admin pastes a Meet link manually (fallback when Google not connected).
 coachRouter.patch("/:id/meet-link", authMw, async (req: any, res) => {
-  const { meetUrl } = req.body || {};
-  if (!/^https:\/\/meet\.google\.com\//.test(meetUrl || "")) return res.status(400).json({ error: "valid meet.google.com link required" });
+  const { isValidMeetLink } = await import("../lib/mailer.js");
+  const meetUrl = String(req.body?.meetUrl || "").trim();
+  if (!isValidMeetLink(meetUrl)) return res.status(400).json({ error: "paste a real Meet link, e.g. https://meet.google.com/abc-defg-hij" });
   const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
   if (!rows.length || (rows[0] as any).orgId !== req.user.orgId) return res.status(404).json({ error: "not found" });
   const [cs] = await db.update(s.coachingSessions).set({ meetUrl, transport: "meet", status: "waiting_for_employee" }).where(eq(s.coachingSessions.id, req.params.id)).returning();

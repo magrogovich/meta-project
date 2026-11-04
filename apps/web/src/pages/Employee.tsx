@@ -3,7 +3,7 @@ import { api, API } from "../lib/api";
 import { useState, useRef, useEffect } from "react";
 import { Link, useRoute, useLocation } from "wouter";
 import { useAuth } from "../lib/auth";
-import { ArrowLeft, Mic, MoreHorizontal, Eye, EyeOff, Copy, Check, KeyRound, Ban, FileText, Plus, Trash2, Pencil, Play, Pause } from "lucide-react";
+import { ArrowLeft, Mic, MoreHorizontal, Eye, EyeOff, Copy, Check, KeyRound, Ban, FileText, Plus, Trash2, Pencil, Play, Pause, Loader2 } from "lucide-react";
 import { Card, CardHeader, Pill, scoreTone, EmptyState, DateField } from "../components/ui";
 import { LineChart, HBars } from "../components/charts";
 
@@ -184,7 +184,7 @@ export function CoachDialog({ employeeId, employeeName, employeeEmail, onClose }
         ...(mode === "scheduled" && when ? { scheduledAt: new Date(when).toISOString() } : {}),
       }),
     }),
-    onSuccess: (r) => nav(`/coach-room/${r.id}?token=${r.token}`),
+    onSuccess: (r) => nav(`/coach-room/${r.id}`),
     onError: (e: any) => setErr(e.message),
   });
   return (
@@ -210,9 +210,13 @@ export function CoachDialog({ employeeId, employeeName, employeeEmail, onClose }
         )}
         {err && <p className="mt-2 rounded-md bg-red-50 p-2 text-xs text-red-700 ring-1 ring-red-200">{err}</p>}
         <div className="mt-4 flex justify-end gap-2">
-          <button className="btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn" disabled={start.isPending || (mode === "scheduled" && !when)} onClick={() => { setErr(""); start.mutate(); }}>
-            <Mic className="h-3.5 w-3.5" /> {mode === "scheduled" ? "Schedule session" : "Start now"}
+          <button className="btn-outline" disabled={start.isPending} onClick={onClose}>Cancel</button>
+          <button className="btn min-w-36" disabled={start.isPending || (mode === "scheduled" && !when)} onClick={() => { setErr(""); start.mutate(); }}>
+            {start.isPending ? (
+              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {mode === "scheduled" ? "Scheduling… sending invite…" : "Starting… sending invite…"}</>
+            ) : (
+              <><Mic className="h-3.5 w-3.5" /> {mode === "scheduled" ? "Schedule session" : "Start now"}</>
+            )}
           </button>
         </div>
       </div>

@@ -108,8 +108,7 @@ function SessionsTab() {
               <p className="mt-0.5 text-gray-500">Topics: {x.topics || "—"}</p>
               <p className="text-gray-500">{x.summary || ""} · {x.transport || "meet"} · {x.status || ""}{x.scheduledAt ? ` · scheduled ${new Date(x.scheduledAt).toLocaleString()}` : ""}{x.inviteEmail ? ` · invite → ${x.inviteEmail}${x.inviteSentAt ? " (sent)" : " (not sent)"}` : ""}{x.meetUrl ? ` · ${x.meetUrl}` : ""}{x.meetError ? ` · Meet error: ${x.meetError}` : ""}</p>
               {!!(x.actionItems || []).length && <p className="text-gray-500">Agreed: {(x.actionItems as string[]).join(" · ")}</p>}
-              <Link href={`/coach-room/${x.id}?token=${x.token}`} className="font-semibold text-indigo-700 hover:underline">Open coaching room →</Link>
-              {" · "}<Link href={`/coach/${x.id}?token=${x.token}`} className="text-gray-500 hover:underline">browser mode</Link>
+              <Link href={`/coach-room/${x.id}`} className="font-semibold text-indigo-700 hover:underline">Open session monitor →</Link>
             </li>))}
         </ul>)}
     </Card>

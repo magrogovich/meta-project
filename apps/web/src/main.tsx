@@ -33,7 +33,6 @@ function App() {
         <Route path="/login"><Login /></Route>
         <Route path="/accept-invite"><AcceptInvite /></Route>
         <Route path="/coach/:id"><Coach /></Route>
-        <Route path="/coach-room/:id"><CoachingRoom /></Route>
         <Route>
           {authed ? (
             <AppLayout onHelp={helpFn}>
@@ -45,6 +44,7 @@ function App() {
                 <Route path="/calls/:id"><CallDetail /></Route>
                 <Route path="/calls"><Calls /></Route>
                 <Route path="/coaching"><Coaching /></Route>
+                <Route path="/coach-room/:id"><CoachingRoom /></Route>
                 <Route path="/guidelines"><Guidelines /></Route>
                 <Route path="/guidelines/:id"><GuidelineDoc /></Route>
                 <Route path="/settings"><Settings /></Route>

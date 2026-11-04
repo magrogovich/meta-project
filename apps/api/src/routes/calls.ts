@@ -421,21 +421,21 @@ coachRouter.post("/", authMw, async (req: any, res) => {
     status, scheduledAt: at, inviteEmail: inviteTo,
     startedAt: t === "inapp" ? new Date() : null,
   }).returning();
-  // Invite email with Meet + room links (instant or scheduled).
+  // Invite email with the Meet link only (instant or scheduled). The coaching
+  // room stays private to the platform — the employee never receives it.
   let invite: any = { sent: false, reason: "no_email" };
-  const front = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
   const when = at ? at.toLocaleString() : "";
   if (t === "meet" && meetUrl && isValidEmail(inviteTo) && sendInvite !== false) {
     const orgName = (await db.select().from(s.orgs).where(eq(s.orgs.id, req.user.orgId)))[0]?.name || "Arocall";
     invite = await sendCoachingInvite(inviteTo, {
       employeeName: emps[0].name, orgName,
-      meetUrl, roomUrl: `${front}/coach-room/${cs.id}?token=${token}`, when, topics: topics || "",
+      meetUrl, when, topics: topics || "",
     });
     if (invite.sent) await db.update(s.coachingSessions).set({ inviteSentAt: new Date() }).where(eq(s.coachingSessions.id, cs.id));
   }
   try { transportFor(t).startSession(cs.id, meetUrl); } catch { /* queued */ }
   await db.insert(s.auditLog).values({ orgId: req.user.orgId, userId: req.user.id, action: `coach_start:${t}`, callId: employeeId });
-  res.json({ ...cs, link: `/coach-room/${cs.id}?token=${token}`, inappLink: `/coach/${cs.id}?token=${token}`, needsMeetLink: t === "meet" && !meetUrl, invite });
+  res.json({ ...cs, link: `/coach-room/${cs.id}`, needsMeetLink: t === "meet" && !meetUrl, invite });
 });
 // Resend the invite email for a session (admin).
 coachRouter.post("/:id/invite", authMw, async (req: any, res) => {
@@ -447,12 +447,11 @@ coachRouter.post("/:id/invite", authMw, async (req: any, res) => {
   const { isValidEmail, sendCoachingInvite } = await import("../lib/mailer.js");
   const to = String(email || cs.inviteEmail || "").trim();
   if (!isValidEmail(to)) return res.status(400).json({ error: "valid employee email required" });
-  const front = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
   const orgName = (await db.select().from(s.orgs).where(eq(s.orgs.id, req.user.orgId)))[0]?.name || "Arocall";
   const emps = await db.select().from(s.employees).where(eq(s.employees.id, cs.employeeId));
   const invite = await sendCoachingInvite(to, {
     employeeName: emps[0]?.name || "there", orgName,
-    meetUrl: cs.meetUrl, roomUrl: `${front}/coach-room/${cs.id}?token=${cs.token}`,
+    meetUrl: cs.meetUrl,
     when: cs.scheduledAt ? new Date(cs.scheduledAt).toLocaleString() : "", topics: cs.topics || "",
   });
   if (invite.sent) await db.update(s.coachingSessions).set({ inviteSentAt: new Date(), inviteEmail: to }).where(eq(s.coachingSessions.id, cs.id));
@@ -743,17 +742,12 @@ coachRouter.get("/:id", authMw, async (req: any, res) => {
   if (!rows.length) return res.status(404).json({ error: "not found" });
   res.json(rows[0]);
 });
-// Room view: auth OR employee token. Includes turns for live transcript.
-coachRouter.get("/:id/room", async (req: any, res) => {
-  const { token } = req.query as any;
+// Room view: private admin monitor (auth required, org-scoped). The employee
+// only ever receives the Google Meet link — never this page.
+coachRouter.get("/:id/room", authMw, async (req: any, res) => {
   const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
-  if (!rows.length) return res.status(404).json({ error: "not found" });
+  if (!rows.length || (rows[0] as any).orgId !== req.user.orgId) return res.status(404).json({ error: "not found" });
   const cs: any = rows[0];
-  const auth = req.header("authorization");
-  if (!(auth && cs.orgId) && cs.token && token !== cs.token) {
-    // allow token OR any logged-in user of same org (checked below when bearer present)
-    if (!auth) return res.status(403).json({ error: "bad token" });
-  }
   const turns = (await db.select().from(s.coachingTurns).where(eq(s.coachingTurns.sessionId, cs.id)))
     .sort((a, b) => a.idx - b.idx);
   // Expiry: instant waiting > join timeout -> expired (scheduled sessions wait
@@ -768,14 +762,13 @@ coachRouter.get("/:id/room", async (req: any, res) => {
   }
   res.json({ session: cs, turns, transportDefault: coachEnv.transport, joinable: joinableReason(cs as any), botOnline: Date.now() - lastBotSeenAt < 30000, botSeenAgoSec: lastBotSeenAt ? Math.round((Date.now() - lastBotSeenAt) / 1000) : null });
 });
-// End session (admin/auth or employee token). Runs summary flow for inapp; meet
+// End session (admin only, private room). Runs summary flow for inapp; meet
 // summary comes from bot callback, but we finalize defensively here too.
-coachRouter.post("/:id/end", async (req: any, res) => {
-  const { token, summary } = req.body || {};
+coachRouter.post("/:id/end", authMw, async (req: any, res) => {
+  const { summary } = req.body || {};
   const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
-  if (!rows.length) return res.status(404).json({ error: "not found" });
+  if (!rows.length || (rows[0] as any).orgId !== req.user.orgId) return res.status(404).json({ error: "not found" });
   const cs: any = rows[0];
-  if (cs.token && token !== cs.token && !req.header("authorization")) return res.status(403).json({ error: "bad token" });
   const turns = await db.select().from(s.coachingTurns).where(eq(s.coachingTurns.sessionId, cs.id));
   const finalSummary = summary || cs.summary || `Session with ${Math.max(turns.length, (cs.transcript as any[]).length / 2, 0)} exchanges.`;
   const items: string[] = Array.isArray(cs.actionItems) && cs.actionItems.length ? cs.actionItems : ["Use empathy opener", "Apply 3-step close"];
@@ -806,12 +799,10 @@ coachRouter.post("/:id/chat", async (req, res) => {
   await db.update(s.coachingSessions).set({ transcript: tr, humanFlag: needsHuman || cs.humanFlag, summary: `Session with ${tr.length / 2} exchanges.`, actionItems: ["Use empathy opener", "Apply 3-step close"] }).where(eq(s.coachingSessions.id, cs.id));
   res.json({ reply: text, mock, humanFlag: needsHuman || cs.humanFlag });
 });
-coachRouter.post("/:id/flag", async (req, res) => {
-  const { token } = req.body || {};
+coachRouter.post("/:id/flag", authMw, async (req: any, res) => {
   const rows = await db.select().from(s.coachingSessions).where(eq(s.coachingSessions.id, req.params.id));
-  if (!rows.length) return res.status(404).json({ error: "not found" });
+  if (!rows.length || (rows[0] as any).orgId !== req.user.orgId) return res.status(404).json({ error: "not found" });
   const cs: any = rows[0];
-  if (cs.token && token !== cs.token && !req.header("authorization")) return res.status(403).json({ error: "bad token" });
   await db.update(s.coachingSessions).set({ humanFlag: true }).where(eq(s.coachingSessions.id, req.params.id));
   await db.insert(s.auditLog).values({ orgId: cs.orgId, userId: "room", action: "coach_human_flag", callId: cs.employeeId });
   res.json({ ok: true });

@@ -20,22 +20,21 @@ export function isValidMeetLink(u: string) {
   return MEET_LINK_RE.test(String(u || "").trim());
 }
 
-export function inviteHtml(opts: { employeeName: string; orgName: string; meetUrl: string; roomUrl: string; when: string; topics: string }) {
+export function inviteHtml(opts: { employeeName: string; orgName: string; meetUrl: string; roomUrl?: string; when: string; topics: string }) {
   const meet = opts.meetUrl
-    ? `<p><a href="${opts.meetUrl}">Join the Google Meet</a> — the AI coach will already be there listening. Just talk; it hears you, thinks (Muse Spark), and answers by voice.<br>Link (copy if needed): <a href="${opts.meetUrl}">${opts.meetUrl}</a></p>`
-    : `<p>The Meet link is not ready yet — open the <a href="${opts.roomUrl}">Coaching room</a> for the latest link.</p>`;
+    ? `<p><a href="${opts.meetUrl}">Join the Google Meet</a> — your AI coach will already be there listening. Just talk; it hears you, thinks, and answers by voice.<br>Link (copy if needed): <a href="${opts.meetUrl}">${opts.meetUrl}</a></p>`
+    : `<p>The Meet link is not ready yet — your coach will share it shortly.</p>`;
   return `<p>Hi ${opts.employeeName},</p>
 <p>You have an AI coaching session${opts.when ? ` scheduled for <b>${opts.when}</b>` : ""} (${opts.orgName}).</p>
 ${meet}
-<p>Live transcript + controls: <a href="${opts.roomUrl}">Coaching room</a><br>Link: <a href="${opts.roomUrl}">${opts.roomUrl}</a></p>
 ${opts.topics ? `<p>Focus topics: ${opts.topics}</p>` : ""}
 <p>This session is recorded and summarized for your profile. AI assists, humans decide.</p>`;
 }
 
-export async function sendCoachingInvite(to: string, opts: { employeeName: string; orgName: string; meetUrl: string; roomUrl: string; when: string; topics: string }) {
+export async function sendCoachingInvite(to: string, opts: { employeeName: string; orgName: string; meetUrl: string; roomUrl?: string; when: string; topics: string }) {
   const c = mailerConfig();
   if (!c.user || !c.pass || !isValidEmail(to)) {
-    console.log(`[mailer] SKIP invite to=${to} meet=${opts.meetUrl} room=${opts.roomUrl} (no GMAIL_USER/APP_PASSWORD or bad email)`);
+    console.log(`[mailer] SKIP invite to=${to} meet=${opts.meetUrl} (no GMAIL_USER/APP_PASSWORD or bad email)`);
     return { sent: false, reason: !c.user || !c.pass ? "gmail_not_configured" : "bad_email" };
   }
   const nodemailer = await import("nodemailer");
@@ -47,7 +46,7 @@ export async function sendCoachingInvite(to: string, opts: { employeeName: strin
     from: c.from, to,
     subject: `AI coaching session${opts.when ? ` — ${opts.when}` : ""}`,
     html: inviteHtml(opts),
-    text: `Hi ${opts.employeeName},\n\nAI coaching session (${opts.orgName})${opts.when ? ` scheduled for ${opts.when}` : ""}.\n\nJoin the Google Meet: ${opts.meetUrl || "(not ready yet — see Coaching room)"}\nCoaching room: ${opts.roomUrl}\n${opts.topics ? `Focus: ${opts.topics}\n` : ""}Recorded and summarized. AI assists, humans decide.`,
+    text: `Hi ${opts.employeeName},\n\nAI coaching session (${opts.orgName})${opts.when ? ` scheduled for ${opts.when}` : ""}.\n\nJoin the Google Meet: ${opts.meetUrl || "(not ready yet — your coach will share it shortly)"}\n${opts.topics ? `Focus: ${opts.topics}\n` : ""}Recorded and summarized. AI assists, humans decide.`,
   });
   return { sent: true };
 }

@@ -28,6 +28,7 @@ function pageNameFor(path: string): string {
   if (p.startsWith("/coaching")) return "Coaching";
   if (p.startsWith("/guidelines")) return "Guidelines";
   if (p.startsWith("/settings")) return "Settings";
+  if (p.startsWith("/coach-room")) return "Coaching";
   if (p.startsWith("/coach")) return "AI coaching";
   return "Workspace";
 }

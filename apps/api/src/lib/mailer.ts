@@ -20,7 +20,7 @@ export function isValidMeetLink(u: string) {
   return MEET_LINK_RE.test(String(u || "").trim());
 }
 
-export function inviteHtml(opts: { employeeName: string; orgName: string; meetUrl: string; roomUrl?: string; when: string; topics: string }) {
+export function inviteHtml(opts: { employeeName: string; orgName: string; meetUrl: string; when: string; topics: string }) {
   const meet = opts.meetUrl
     ? `<p><a href="${opts.meetUrl}">Join the Google Meet</a> — your AI coach will already be there listening. Just talk; it hears you, thinks, and answers by voice.<br>Link (copy if needed): <a href="${opts.meetUrl}">${opts.meetUrl}</a></p>`
     : `<p>The Meet link is not ready yet — your coach will share it shortly.</p>`;
@@ -31,7 +31,7 @@ ${opts.topics ? `<p>Focus topics: ${opts.topics}</p>` : ""}
 <p>This session is recorded and summarized for your profile. AI assists, humans decide.</p>`;
 }
 
-export async function sendCoachingInvite(to: string, opts: { employeeName: string; orgName: string; meetUrl: string; roomUrl?: string; when: string; topics: string }) {
+export async function sendCoachingInvite(to: string, opts: { employeeName: string; orgName: string; meetUrl: string; when: string; topics: string }) {
   const c = mailerConfig();
   if (!c.user || !c.pass || !isValidEmail(to)) {
     console.log(`[mailer] SKIP invite to=${to} meet=${opts.meetUrl} (no GMAIL_USER/APP_PASSWORD or bad email)`);

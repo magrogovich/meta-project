@@ -64,6 +64,7 @@ ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS meet_error text not null 
 ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS scheduled_at timestamp;
 ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS invite_email text not null default '';
 ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS invite_sent_at timestamp;
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS bot_claimed_at timestamp;
 CREATE INDEX IF NOT EXISTS turns_session ON coaching_turns (session_id, idx);
 CREATE INDEX IF NOT EXISTS crit_call ON criterion_results (call_id);
 `;

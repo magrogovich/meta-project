@@ -49,6 +49,49 @@ export async function completeText(system: string, user: string): Promise<{ text
   }
 }
 
+// Streaming variant for the voice coach: chunks arrive token-by-token so the
+// bot can start speaking the first sentence while the rest still generates
+// (waiting for the full reply made coach turns take ~30s). max_tokens caps
+// generation length; a short spoken reply should never need more.
+export async function streamText(system: string, user: string, onChunk: (t: string) => void, signal?: AbortSignal): Promise<{ text: string; mock: boolean }> {
+  if (isMock) { const t = mockText(system, user); onChunk(t); return { text: t, mock: true }; }
+  const res = await fetch(`${BASE}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
+    body: JSON.stringify({
+      // max_tokens must leave room for Muse Spark's hidden reasoning
+      // (~360 tokens even for a one-sentence reply) PLUS the visible text,
+      // or the completion comes back empty — 220 (and even 1200 with the full coaching prompt) starved it completely.
+      model: LLM_MODEL, temperature: 0.1, max_tokens: 4000, stream: true,
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+    }),
+    signal,
+  });
+  if (!res.ok || !res.body) throw new Error(`Muse stream HTTP ${res.status}`);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "", full = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") continue;
+      try {
+        const delta = JSON.parse(data)?.choices?.[0]?.delta?.content || "";
+        if (delta) { full += delta; onChunk(delta); }
+      } catch { /* partial JSON across chunks: ignore */ }
+    }
+  }
+  if (!full) throw new Error("Muse stream: empty response");
+  return { text: full, mock: false };
+}
+
 function mockText(system: string, user: string): string {
   if (system.includes("AI voice coach")) {
     return "Thanks for sharing that. Let's dig into one specific moment from your calls, then do a quick role-play so you leave with 2-3 concrete actions. What felt hardest about that call from your side?";

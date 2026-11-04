@@ -1,0 +1,31 @@
+# Coach bot in Docker: private PulseAudio + Xvfb + persistent Chrome
+# profile. The host's audio devices and desktop are never touched.
+#
+#   docker compose build
+#   xhost +local:root   # one-time, lets the login window open on your display
+#   docker compose run --rm bot login    # one-time Google sign-in (coach account)
+#   docker compose up -d bot             # run the bot
+#   docker compose logs -f bot
+services:
+  bot:
+    build: .
+    image: arocall/coach-bot
+    init: true                  # tini as PID 1: reaps zombie Chrome/crashpad processes
+    network_mode: host          # reaches the API at localhost:4000 + Meet
+    env_file: .env              # COACH_BOT_SECRET + OPENAI_API_KEY (never committed values)
+    environment:
+      COACH_BOT_PROFILE_DIR: /profile
+      COACH_BOT_DEBUG_DIR: /debug
+      COACH_BOT_HEADLESS: "false"
+      COACH_BOT_CHANNEL: chrome
+      ARO_API: http://localhost:4000
+      DISPLAY: ${DISPLAY:-:0}   # used by `login` only; start mode uses Xvfb
+    volumes:
+      # COACH_BOT_HOST_HOME (set in .env), NOT $HOME: `sudo docker compose`
+      # expands $HOME to /root, mounting an empty root-owned profile the
+      # uid-1000 bot cannot write — Chrome then dies with a misleading
+      # ProcessSingleton error and never joins. Pin the real user's home.
+      - ${COACH_BOT_HOST_HOME:-/home/xuser}/.arocall/coach-bot-profile:/profile   # persistent Google login
+      - ${COACH_BOT_HOST_HOME:-/home/xuser}/.arocall/coach-bot-debug:/debug       # failure screenshots
+      - /tmp/.X11-unix:/tmp/.X11-unix                     # login window on host display
+    restart: unless-stopped

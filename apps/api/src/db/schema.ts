@@ -128,6 +128,7 @@ export const coachingSessions = pgTable("coaching_sessions", {
   startedAt: timestamp("started_at"),
   endedAt: timestamp("ended_at"),
   botError: text("bot_error").notNull().default(""),
+  botClaimedAt: timestamp("bot_claimed_at"),
   ttsChars: integer("tts_chars").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });

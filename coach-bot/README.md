@@ -2,17 +2,46 @@
 
 Playwright + Chromium bot that joins a Google Meet as the coach, hears the employee via virtual audio, and drives the conversation loop (Muse LLM + history, OpenAI TTS per sentence, VAD barge-in). Controlled by the backend through a pending queue + callbacks. Hackathon build: stable and simple over perfect.
 
-## The account model: ONE coach account for creating, NO login for joining
+## The account model: ONE coach account for creating AND joining
 Create one dedicated Google account for the coach (display name **"Arocall AI Coach"**).
-- **Settings → Integrations → Connect Google** (in the platform): sign in with the coach account. This authorizes the *backend* to **create** Meet spaces via the API (`spaces.create`). Stored encrypted per org. This is the ONLY login you need.
-- **Joining is login-free**: the bot joins spaces as a signed-out guest with display name "Arocall AI Coach" (`COACH_BOT_JOIN_MODE=guest`, default) — possible because spaces are created OPEN access. `npm run login` is only needed if you switch to `COACH_BOT_JOIN_MODE=account` (Workspace orgs that force signed-in joins).
+- **Settings → Integrations → Connect Google** (in the platform): sign in with the coach account. This authorizes the *backend* to **create** Meet spaces via the API (`spaces.create`). Stored encrypted per org.
+- **The bot joins signed in as that same account** (`COACH_BOT_JOIN_MODE=account`, default): run `npm run login` once (headed Chrome opens; sign in with the coach account, press ENTER). The account created the space, so Meet admits it as host.
+- Guest mode (`COACH_BOT_JOIN_MODE=guest`) exists but is **not recommended**: spaces are OPEN, yet Google commonly rejects signed-out automation joins with "You can't join this video call" (verified against live spaces). The bot detects this page and reports it in `bot_error` instead of timing out silently.
 
-## Prerequisites
+## Run in Docker (recommended)
+
+The bot needs its own audio stack: it creates virtual PulseAudio devices
+and — since Chrome ignores `PULSE_SINK`/`PULSE_SOURCE` — must own the
+*default* mic/speaker of its environment. Run on the same machine as a
+human's browser, that hijacks the human's mic (the coach starts
+transmitting the room) and routes the coach's voice into a silent sink
+(the employee hears nothing). Docker gives the bot a private PulseAudio
+server, an Xvfb display (Google rejects headless joins) and a persistent
+Chrome profile; the host is never touched.
+
+```bash
+cd coach-bot
+docker compose build
+xhost +local:root                       # one-time: lets the login window open
+docker compose run --rm bot login       # one-time: sign in with the coach account, press ENTER, let the window close itself
+docker compose up -d bot                # run
+docker compose logs -f bot
+```
+
+The profile persists in `~/.arocall/coach-bot-profile` (mounted at
+`/profile`) — never store it in `/tmp` (wiped on reboot) and never kill
+Chrome mid-login (Google revokes the session). Screenshots land in
+`~/.arocall/coach-bot-debug`.
+
+## Run on the host (only on a dedicated bot machine)
+
 - Linux with PulseAudio/PipeWire: `pactl`, `paplay` installed.
 - Node 20+, the coach Google account (dedicated, named "Arocall AI Coach").
 - Backend API running (`pnpm dev` → `:4000`); same `COACH_BOT_SECRET` in API `.env` and this service's env.
+- During a session the bot switches the machine's default sink/source to
+  its virtual devices and restores them afterwards. Do not run it on a
+  machine a human is using for calls at the same time.
 
-## Install
 ```bash
 cd coach-bot
 npm i
@@ -27,7 +56,7 @@ Copy values into `coach-bot/.env` (created for you, git-ignored, auto-loaded via
 | `ARO_API` | `http://localhost:4000` | Backend base URL |
 | `COACH_BOT_SECRET` | `dev-bot-secret` | `x-bot-secret` for `/api/coach/bot/pending` + `/api/coach/bot/callback` |
 | `COACH_BOT_PROFILE_DIR` | `/tmp/opencode/coach-bot-profile` | Persistent Chromium profile (bot Google login lives here) |
-| `COACH_BOT_HEADLESS` | `true` | `false` = headed debug |
+| `COACH_BOT_HEADLESS` | `false` | Headed is required in practice: Google rejects headless Meet joins ("You can't join this video call" / 400 pages). Run on a desktop (`DISPLAY=:0 npm start`) or under Xvfb on servers. Repeated join retries also get rate-limited — the bot now backs off and reports it instead of hammering. |
 | `COACH_BOT_DEBUG_DIR` | `/tmp/opencode/coach-bot-debug` | Failure screenshots |
 | `COACH_MAX_SESSION_MIN` | `25` | Cost/duration guard |
 | `OPENAI_API_KEY` | — | Empty = mock TTS (logs text, plays nothing) |
@@ -37,7 +66,8 @@ Copy values into `coach-bot/.env` (created for you, git-ignored, auto-loaded via
 
 ## Usage
 ```bash
-npm run login                                        # one-time: window stays open — sign in with the coach account (same as Integrations), then press ENTER here
+npm run login                                        # REQUIRED once (account mode): sign in with the coach account (same as Integrations), press ENTER, and let the window close itself — killing Chrome mid-login makes Google revoke the saved session
+DISPLAY=:0 npm start                                 # headed (required); servers: xvfb-run -a npm start
 npm run join -- https://meet.google.com/xxx-yyyy-zzz            # debug join only (needs a display; headless servers: xvfb-run -a npm run join -- <url>)
 npm run test-say -- https://meet.google.com/xxx-yyyy-zzz "Hello! Can you hear me?"  # prove TTS audible
 npm start                                            # poll pending sessions every 10s and run them

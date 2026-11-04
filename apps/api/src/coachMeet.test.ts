@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert";
 import { newLoop, step } from "./lib/coachingLoop.js";
-import { trimHistory, HUMAN_REGEX, GOODBYE_REGEX, resolveInitialStatus, isDue } from "./lib/coach.js";
+import { trimHistory, HUMAN_REGEX, GOODBYE_REGEX, resolveInitialStatus, isDue, isClaimStale } from "./lib/coach.js";
 import { isValidEmail, isValidMeetLink } from "./lib/mailer.js";
+import { joinableReason } from "./lib/coach.js";
 import { splitSentences } from "./lib/openaiTts.js";
 
 test("normal turn: utterance -> llmDone queues sentences, played -> listening", () => {
@@ -90,4 +91,22 @@ test("manual Meet link validation rejects placeholders", () => {
   assert.ok(!isValidMeetLink("https://meet.google.com/"));
   assert.ok(!isValidMeetLink("https://example.com/abc-defg-hij"));
   assert.ok(!isValidMeetLink(""));
+});
+
+test("bot claim staleness: fresh claim blocks, stale/dead claim frees the session", () => {
+  const now = Date.now();
+  assert.equal(isClaimStale(null, now), true);
+  assert.equal(isClaimStale(new Date(now - 1000), now), false);
+  assert.equal(isClaimStale(new Date(now - 200000), now), true);
+  assert.equal(joinableReason({ status: "waiting_for_employee", transport: "meet", meetUrl: "x", botClaimedAt: new Date(now - 1000) } as any), "bot-joining");
+  assert.equal(joinableReason({ status: "waiting_for_employee", transport: "meet", meetUrl: "x", botClaimedAt: new Date(now - 200000) } as any), "joinable");
+});
+
+test("joinable reason for room diagnostics", () => {
+  assert.equal(joinableReason({ status: "live", transport: "meet", meetUrl: "x" } as any), "live");
+  assert.equal(joinableReason({ status: "waiting_for_employee", transport: "meet", meetUrl: "x" } as any), "joinable");
+  assert.equal(joinableReason({ status: "waiting_for_employee", transport: "meet" } as any), "no-link");
+  assert.equal(joinableReason({ status: "expired", transport: "meet", meetUrl: "x" } as any), "expired");
+  assert.equal(joinableReason({ status: "scheduled", transport: "meet", meetUrl: "x", scheduledAt: new Date(Date.now() + 3600000) } as any), "scheduled-waiting");
+  assert.equal(joinableReason({ status: "live", transport: "inapp" } as any), "live");
 });

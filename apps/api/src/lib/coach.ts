@@ -1,7 +1,7 @@
 // Coach transport abstraction + session lifecycle helpers.
 // Keeps existing coachSystemPrompt / safety rules / summary flow untouched.
 export type CoachTransport = "meet" | "inapp";
-export type CoachStatus = "waiting_for_employee" | "live" | "ended" | "expired" | "failed";
+export type CoachStatus = "waiting_for_employee" | "scheduled" | "live" | "ended" | "expired" | "failed";
 
 export const coachEnv = {
   transport: (process.env.COACH_TRANSPORT === "inapp" ? "inapp" : "meet") as CoachTransport,
@@ -85,4 +85,28 @@ export function isDue(s: { status: string; scheduledAt?: any }): boolean {
   if (s.status === "waiting_for_employee") return true;
   if (s.status === "scheduled" && s.scheduledAt && +new Date(s.scheduledAt) <= Date.now()) return true;
   return false;
+}
+
+// A claim is stale when the claiming bot died before going live; the session
+// then becomes claimable again instead of being stuck forever.
+export function isClaimStale(claimedAt: any, nowMs = Date.now(), staleMs = 90000): boolean {
+  if (!claimedAt) return true;
+  const t = +new Date(claimedAt);
+  return isNaN(t) || nowMs - t > staleMs;
+}
+
+// Why the bot would / would not pick up this session. Shown in the room so an
+// empty Meet is diagnosable without reading server logs.
+export function joinableReason(s: { status: string; transport: string; meetUrl?: string; scheduledAt?: any; botClaimedAt?: any }): string {
+  if (s.status === "live") return "live";
+  if (s.status === "waiting_for_employee" && s.botClaimedAt && !isClaimStale(s.botClaimedAt)) return "bot-joining";
+  if (s.status === "ended" || s.status === "expired" || s.status === "failed") return s.status;
+  if (s.transport !== "meet") return "inapp-transport";
+  if (!s.meetUrl) return "no-link";
+  if (s.status === "scheduled") {
+    if (s.scheduledAt && +new Date(s.scheduledAt) > Date.now()) return "scheduled-waiting";
+    return "joinable";
+  }
+  if (s.status === "waiting_for_employee") return "joinable";
+  return s.status;
 }

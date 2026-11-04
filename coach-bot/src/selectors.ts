@@ -2,7 +2,9 @@
 // Handles guest + signed-in variants; screenshot on failure (debug dir).
 export const SEL = {
   nameField: 'input[aria-label*="name" i], input[placeholder*="name" i]',
-  joinButton: 'button:has-text("Join now"), button:has-text("Join"), button:has-text("Ask to join")',
+  // Precise on purpose: a bare has-text("Join") also matches "Other ways to
+  // join", and clicking that just expands a menu (looked like a Join timeout).
+  joinButton: 'button:has-text("Join now"), button:has-text("Ask to join"), button:has-text("Switch here")',
   micOff: 'button[aria-label*="microphone" i]',
   camOff: 'button[aria-label*="camera" i]',
   dismiss: 'button:has-text("Dismiss"), button:has-text("Got it"), button:has-text("Continue without")',

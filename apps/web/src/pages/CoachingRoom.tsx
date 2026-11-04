@@ -69,9 +69,15 @@ export function CoachingRoom() {
           <p className="mt-1 text-xs text-gray-500">{s.status === "scheduled" && s.scheduledAt ? `Scheduled for ${new Date(s.scheduledAt).toLocaleString()} — the bot joins automatically, then you join the Meet.` : "Join the Meet below — the bot joins as “Arocall AI Coach”. Talk, and the transcript appears here live."}</p>
           {s.meetError && <p className="mt-2 rounded-md bg-red-50 p-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">Meet auto-create failed: {s.meetError}. Reconnect Google (Settings → Integrations) or paste a link below.</p>}
           {s.botError || s.bot_error ? <p className="mt-2 rounded-md bg-red-50 p-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">Bot error: {s.botError || s.bot_error}</p> : null}
+          {!isOver && s.transport !== "inapp" && data.botOnline === false && data.joinable !== "bot-joining" && data.joinable !== "live" ? <p className="mt-2 rounded-md bg-red-50 p-2 text-xs font-semibold text-red-700 ring-1 ring-red-200">Coach bot is not running — nobody will join this Meet until it is started: <code>cd coach-bot &amp;&amp; docker compose up -d bot</code>{data.botSeenAgoSec ? ` (last seen ${data.botSeenAgoSec}s ago)` : " (not seen since the API started)"}. Start it, then wait ~10s here; do not create a new session.</p> : null}
           {!isOver && meetUrl && !(turns.length) && (
             <p className="mt-2 rounded-md bg-gray-50 p-2 text-xs text-gray-600 ring-1 ring-gray-200">
-              {s.status === "scheduled" ? "Bot joins automatically at the scheduled time — keep coach-bot running." : "Waiting for the bot to join — keep coach-bot running (`npm start`). If it stays here, check the bot terminal for JOIN FAILED / poll errors."}
+              {data.joinable === "bot-joining" && "The bot has claimed this session and is joining the Meet now — give it up to a minute. If it doesn't appear, check the bot terminal."}
+              {data.joinable === "joinable" && "Bot should pick this up within ~10s — if it doesn't, the coach-bot process is probably not running (cd coach-bot && npm start), or check its terminal for poll errors."}
+              {data.joinable === "scheduled-waiting" && "Scheduled — the bot joins automatically at the scheduled time. Keep coach-bot running."}
+              {data.joinable === "no-link" && "No Meet link yet — the bot has nothing to join."}
+              {data.joinable === "inapp-transport" && "In-app transport — no bot needed, use browser mode."}
+              {(!data.joinable || !["joinable", "scheduled-waiting", "no-link", "inapp-transport"].includes(data.joinable)) && (s.status === "scheduled" ? "Bot joins automatically at the scheduled time — keep coach-bot running." : "Waiting for the bot to join — keep coach-bot running (`npm start`). If it stays here, check the bot terminal for JOIN FAILED / poll errors.")}
             </p>
           )}
           {s.inviteEmail && <p className="mt-1 text-xs text-gray-500">Invite → {s.inviteEmail} {s.inviteSentAt ? "(sent)" : "(not sent — no Gmail config or bad email)"} <button className="font-semibold text-indigo-700 hover:underline" onClick={async () => { await authed(`/api/coach/${id}/invite`, {}); }}>resend</button></p>}

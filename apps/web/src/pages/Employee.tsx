@@ -19,6 +19,8 @@ function AudioPlayer({ src, audioRef }: { src: string; audioRef: React.RefObject
   const [t, setT] = useState(0);
   const [dur, setDur] = useState(0);
   const [mono, setMono] = useState(true);
+  const [rate, setRate] = useState(1);
+  const SPEEDS = [1, 1.25, 1.5, 2];
   const [audioError, setAudioError] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const pendingSeek = useRef<{ pos: number; play: boolean } | null>(null);
@@ -41,6 +43,7 @@ function AudioPlayer({ src, audioRef }: { src: string; audioRef: React.RefObject
   };
   const onLoaded = (e: React.SyntheticEvent<HTMLAudioElement>) => {
     const el = e.currentTarget;
+    el.playbackRate = rate;
     setDur(el.duration);
     const p = pendingSeek.current;
     pendingSeek.current = null;
@@ -89,6 +92,16 @@ function AudioPlayer({ src, audioRef }: { src: string; audioRef: React.RefObject
       </div>
       <span className="shrink-0 text-xs tabular-nums text-gray-400">{fmt(dur)}</span>
       {audioError && <span className="shrink-0 text-[11px] text-red-600">Couldn't load audio</span>}
+      <button
+        onClick={() => {
+          const next = SPEEDS[(SPEEDS.indexOf(rate) + 1) % SPEEDS.length];
+          setRate(next);
+          if (audioRef.current) audioRef.current.playbackRate = next;
+        }}
+        title={`Playback speed: ${rate}x (click to change)`}
+        className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums text-gray-500 ring-1 ring-gray-300 transition hover:text-gray-900">
+        {rate}x
+      </button>
       <button
         onClick={toggleMix}
         title={mono
